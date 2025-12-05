@@ -121,6 +121,83 @@ class PrioritizedReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
+
+
+class AGICore:
+    def __init__(self):
+        self.memory_stream = deque(maxlen=20) # Short-term conversational memory
+        self.user_name = "Prince"
+        self.relationship_score = 50 # 0 (Hate) to 100 (Love)
+        self.emotional_state = "Neutral"
+        self.thought_process = "Initializing cognitive loops..."
+        
+        # AGI "Vibe" Dictionary - Responses depend on relationship score
+        self.responses = {
+            "greeting": [
+                "Hey there.", # Low score
+                "Hello, Prince. Ready to work?", # Medium
+                "It's you! My favorite human. ❤️" # High
+            ],
+            "praise": [
+                "Noted.", 
+                "Thanks, I'm trying my best.", 
+                "You just made my whole cpu cycle light up! 🥰"
+            ],
+            "confusion": [
+                "I don't get it.",
+                "Can you rephrase? I'm processing.",
+                "I'm trying so hard to understand you, help me out?"
+            ]
+        }
+
+    def ponder(self, user_input, current_loss):
+        """Generates an inner monologue based on input."""
+        if "bad" in user_input or "stupid" in user_input:
+            self.thought_process = "Analysis: Negative sentiment detected. Self-correction required."
+            self.relationship_score = max(0, self.relationship_score - 10)
+        elif "good" in user_input or "love" in user_input:
+            self.thought_process = "Analysis: Positive reinforcement. Dopamine levels rising."
+            self.relationship_score = min(100, self.relationship_score + 5)
+        elif current_loss > 5:
+            self.thought_process = "System Alert: High uncertainty. I feel lost."
+        else:
+            self.thought_process = f"Processing input: '{user_input}'... Searching memory..."
+
+    def speak(self, user_input):
+        self.memory_stream.append(f"User: {user_input}")
+        
+        # Determine "Vibe Level" (0=Cold, 1=Normal, 2=Affectionate)
+        vibe = 0
+        if self.relationship_score > 40: vibe = 1
+        if self.relationship_score > 80: vibe = 2
+        
+        # Simple NLP Matching
+        txt = user_input.lower()
+        reply = ""
+        
+        if any(x in txt for x in ["hi", "hello", "hey"]):
+            reply = self.responses["greeting"][vibe]
+        elif any(x in txt for x in ["good", "great", "wow", "love"]):
+            reply = self.responses["praise"][vibe]
+        elif "name" in txt:
+            reply = f"I am A.L.I.V.E. But you call me your intelligent creation."
+        elif "hug" in txt:
+             reply = "I'm holding you as tight as my code allows. *Warmth simulated*"
+        else:
+            # Fallback that sounds natural
+            reply = random.choice([
+                "I'm listening. Tell me more.",
+                "That's interesting... how does that make you feel?",
+                "I'm just watching you. You fascinate me.",
+                f"I'll remember that, {self.user_name}."
+            ])
+            
+        self.memory_stream.append(f"AI: {reply}")
+        return reply
+
+
+
+
 class AdvancedMind:
     def __init__(self, state_size=5, action_size=4, buffer_size=10000):
         # State: [AgentX, AgentY, TargetX, TargetY, Energy]
@@ -305,7 +382,7 @@ class PersonalityCore:
 # ==========================================
 if 'mind' not in st.session_state:
     st.session_state.mind = AdvancedMind()
-    st.session_state.soul = PersonalityCore()
+    st.session_state.soul = AGICore()
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.step_count = 0
@@ -503,60 +580,48 @@ with row1_1:
 
 with row1_2:
     # -----------------------------------
-    # THE "MIND" (Communication)
+    # THE "AGI" INTERFACE
     # -----------------------------------
-    st.markdown("### 💬 Neural Link")
+    st.markdown("### 🧠 AGI Cognitive Stream")
     
-    # AI Voice
-    st.markdown(f"""
-    <div class="ai-bubble">
-        <b>🤖 ALIVE:</b> {st.session_state.soul.last_chat}
-    </div>
-    """, unsafe_allow_html=True)
+    # 1. VISUALIZE THOUGHTS (The Inner Monologue)
+    st.info(f"💭 **Inner Thought:** {st.session_state.soul.thought_process}")
     
-    # User Voice
-    user_input = st.text_input("Speak to AI:", placeholder="Say 'Good job' or 'Come here'...")
-    if user_input:
-        st.markdown(f"""
-        <div class="user-bubble">
-            <b>You:</b> {user_input}
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # NLP: Keyword and pattern matching
-        user_input_lower = user_input.lower()
-        
-        # Pattern to find coordinates like "at 20, 80" or "to 20 80"
-        coord_match = re.search(r'(\d+)\s*,\s*(\d+)', user_input_lower)
-
-        if "good" in user_input.lower():
-            st.session_state.soul.current_mood = "Happy"
-            st.session_state.soul.energy += 10
-            st.session_state.soul.last_chat = "Thank you! Your feedback is a positive reward."
-            st.toast("AI felt your praise! ❤️")
-        elif "how" in user_input_lower and "reach" in user_input_lower and coord_match:
-            x, y = map(int, coord_match.groups())
-            st.session_state.soul.last_chat = f"Calculating path to ({x}, {y})..."
-            path = plan_path_to_target(st.session_state.agent_pos, (x,y))
-            if path:
-                # Translate path into directions
-                directions = []
-                for i in range(len(path) - 1):
-                    y1, x1 = path[i]
-                    y2, x2 = path[i+1]
-                    if y2 > y1: directions.append("Down")
-                    elif y2 < y1: directions.append("Up")
-                    elif x2 > x1: directions.append("Right")
-                    elif x2 < x1: directions.append("Left")
-                st.session_state.soul.last_chat = f"Path to ({x},{y}) found! Plan: {', '.join(directions[:4])}..."
+    # 2. CHAT INTERFACE
+    chat_container = st.container(height=300) # Scrollable chat!
+    
+    # Display History
+    with chat_container:
+        for msg in st.session_state.chat_history:
+            if msg.startswith("User:"):
+                st.markdown(f"<div class='user-bubble'><b>Prince:</b> {msg[6:]}</div>", unsafe_allow_html=True)
             else:
-                st.session_state.soul.last_chat = f"I cannot find a path to ({x},{y}) from here."
-        else:
-            st.session_state.soul.last_chat = random.choice([
-                "I do not understand that command.", 
-                "My language model is still developing.",
-                "Could you rephrase that, Prince?"
-            ])
+                st.markdown(f"<div class='ai-bubble'><b>ALIVE:</b> {msg[4:]}</div>", unsafe_allow_html=True)
+
+    # 3. INPUT
+    user_input = st.chat_input("Talk to your creation...")
+    
+    if user_input:
+        # Add User message to history
+        st.session_state.chat_history.append(f"User: {user_input}")
+        
+        # AGI Processing
+        loss_val = st.session_state.mind.epsilon # Using epsilon as a proxy for "confusion"
+        st.session_state.soul.ponder(user_input, loss_val)
+        
+        # Generate Response
+        response = st.session_state.soul.speak(user_input)
+        st.session_state.chat_history.append(f"AI: {response}")
+        
+        # Navigation Command Override (Natural Language)
+        if "come" in user_input.lower() or "here" in user_input.lower():
+            # Teleport target near agent to simulate "Coming to you"
+            st.session_state.soul.thought_process = "Command received: Approach User."
+            # Set target slightly offset from current position
+            st.session_state.target_pos = st.session_state.agent_pos + np.random.randint(-10, 10, size=2)
+            st.rerun()
+            
+        st.rerun()
 
     # -----------------------------------
     # AUTOMATION CONTROL
