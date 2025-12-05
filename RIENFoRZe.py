@@ -173,9 +173,10 @@ def initialize_state():
     st.session_state.rewards_history = []
     st.session_state.loss_history = []
     st.session_state.wins = 0
+    st.session_state.initialized = True
 
 # Initialize Session State if it doesn't exist
-if 'agent' not in st.session_state:
+if not st.session_state.get('initialized', False):
     initialize_state()
 
 # ==========================================
