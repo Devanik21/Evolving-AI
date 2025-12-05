@@ -683,15 +683,13 @@ col_sim, col_mind = st.columns([2, 1])
 with col_sim:
     st.markdown("### 🔭 Latent World Simulation")
     
-    # Normalize positions to percentages for the CSS
+    # 1. Get Coordinates & Stats
     ax, ay = st.session_state.pos[0], st.session_state.pos[1]
     tx, ty = st.session_state.target[0], st.session_state.target[1]
-    
-    # Get mood icon safely
     mood_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
 
-    # We use a single string with careful formatting to ensure it renders as HTML
-    # We moved the @keyframes pulse to the global CSS, but we can keep it inline here for safety if the global one fails
+    # 2. Build the HTML String (The "Matrix")
+    # We wrap everything in a PARENT div with 'position: relative' so the absolute items stay inside it.
     html_grid = f"""
     <div style="
         position: relative;
@@ -736,7 +734,7 @@ with col_sim:
             transform: translate(-50%, -50%) rotate(45deg);
             box-shadow: 0 0 15px #ff0055;
             z-index: 5;
-            animation: pulse 1s infinite;
+            animation: targetPulse 1s infinite;
         "></div>
         
         <div style="
@@ -752,7 +750,7 @@ with col_sim:
         "></div>
         
         <style>
-            @keyframes pulse {{
+            @keyframes targetPulse {{
                 0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
                 50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.3); opacity: 0.8; }}
                 100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
@@ -761,10 +759,10 @@ with col_sim:
     </div>
     """
     
-    # IMPORTANT: unsafe_allow_html=True is REQUIRED for this to work
+    # 3. RENDER IT (This is the critical line!)
     st.markdown(html_grid, unsafe_allow_html=True)
     
-    # Auto-Run Controls
+    # 4. Controls
     col_ctrl1, col_ctrl2 = st.columns(2)
     if col_ctrl1.button("▶️ STEP"):
         step_environment()
