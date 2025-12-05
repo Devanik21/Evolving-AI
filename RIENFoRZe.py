@@ -683,11 +683,15 @@ col_sim, col_mind = st.columns([2, 1])
 with col_sim:
     st.markdown("### 🔭 Latent World Simulation")
     
-    # We draw the grid using standard HTML/CSS for speed and looks
-    # Normalize positions to percentages
+    # Normalize positions to percentages for the CSS
     ax, ay = st.session_state.pos[0], st.session_state.pos[1]
     tx, ty = st.session_state.target[0], st.session_state.target[1]
     
+    # Get mood icon safely
+    mood_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
+
+    # We use a single string with careful formatting to ensure it renders as HTML
+    # We moved the @keyframes pulse to the global CSS, but we can keep it inline here for safety if the global one fails
     html_grid = f"""
     <div style="
         position: relative;
@@ -697,6 +701,7 @@ with col_sim:
         border: 2px solid #00d2ff;
         border-radius: 10px;
         overflow: hidden;
+        margin-bottom: 20px;
         background-image: 
             linear-gradient(rgba(0, 210, 255, 0.1) 1px, transparent 1px),
             linear-gradient(90deg, rgba(0, 210, 255, 0.1) 1px, transparent 1px);
@@ -706,18 +711,20 @@ with col_sim:
             position: absolute;
             left: {ax}%;
             top: {ay}%;
-            width: 30px;
-            height: 30px;
-            background: #00d2ff;
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 210, 255, 0.2);
+            border: 2px solid #00d2ff;
             border-radius: 50%;
             transform: translate(-50%, -50%);
             box-shadow: 0 0 20px #00d2ff;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
-            transition: all 0.1s linear;
-        ">{st.session_state.soul.moods[st.session_state.soul.current_mood]}</div>
+            font-size: 24px;
+            z-index: 10;
+            transition: all 0.2s ease-out;
+        ">{mood_icon}</div>
         
         <div style="
             position: absolute;
@@ -728,6 +735,7 @@ with col_sim:
             background: #ff0055;
             transform: translate(-50%, -50%) rotate(45deg);
             box-shadow: 0 0 15px #ff0055;
+            z-index: 5;
             animation: pulse 1s infinite;
         "></div>
         
@@ -740,29 +748,35 @@ with col_sim:
             background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.05) 50%);
             background-size: 100% 4px;
             pointer-events: none;
+            z-index: 20;
         "></div>
+        
+        <style>
+            @keyframes pulse {{
+                0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
+                50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.3); opacity: 0.8; }}
+                100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
+            }}
+        </style>
     </div>
-    <style>
-        @keyframes pulse {{
-            0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); }}
-            50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.2); }}
-            100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); }}
-        }}
-    </style>
     """
+    
+    # IMPORTANT: unsafe_allow_html=True is REQUIRED for this to work
     st.markdown(html_grid, unsafe_allow_html=True)
     
     # Auto-Run Controls
     col_ctrl1, col_ctrl2 = st.columns(2)
-    if col_ctrl1.button("▶️ RUN CYCLE (Step)"):
+    if col_ctrl1.button("▶️ STEP"):
         step_environment()
         st.rerun()
         
-    auto_run = col_ctrl2.checkbox("♾️ AUTO-EVOLVE")
+    auto_run = col_ctrl2.checkbox("♾️ AUTO")
     if auto_run:
         step_environment()
         time.sleep(0.05)
         st.rerun()
+
+
 
 with col_mind:
     st.markdown("### 🧠 Cognitive Stream")
