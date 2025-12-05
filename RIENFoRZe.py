@@ -2,402 +2,334 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import random
 from collections import deque
+import time
 
-# Page config
+# ==========================================
+# 1. CONFIGURATION & STYLING
+# ==========================================
 st.set_page_config(
-    page_title="AI Autonomous Agent",
+    page_title="Project Newborn: AI Lifeform",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
+    page_icon="🧬"
 )
 
-# Custom CSS
+# Custom CSS for that Sci-Fi Lab feel
 st.markdown("""
 <style>
-    .main {
-        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
-    }
     .stApp {
         background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+        color: #e0e0e0;
     }
-    h1, h2, h3, p, label, .stMetric {
-        color: #e0e0e0 !important;
+    .stMetric {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 10px;
+        border-radius: 5px;
     }
-    .stMetric label {
-        color: #888 !important;
-    }
-    .status-learning {
-        color: #ffaa00;
+    .stButton>button {
+        background-color: #00ddff;
+        color: #000;
+        border: none;
+        border-radius: 4px;
         font-weight: bold;
-        font-size: 1.2em;
     }
-    .status-converged {
-        color: #00ff88;
-        font-weight: bold;
-        font-size: 1.2em;
-    }
-    div[data-testid="stMetricValue"] {
+    h1, h2, h3 {
         color: #00ddff !important;
+        font-family: 'Courier New', monospace;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Neural Network (Deep Q-Network)
+# ==========================================
+# 2. THE BRAIN (NEURAL NETWORK)
+# ==========================================
 class DQNAgent:
-    def __init__(self, state_size=4, action_size=4, learning_rate=0.001):
+    def __init__(self, state_size=4, action_size=4):
         self.state_size = state_size
         self.action_size = action_size
         self.memory = deque(maxlen=2000)
-        self.gamma = 0.95
-        self.epsilon = 1.0
+        
+        # Hyperparameters
+        self.gamma = 0.95    # Discount rate (Future vs Now)
+        self.epsilon = 1.0   # Exploration rate (Curiosity)
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.995
-        self.learning_rate = learning_rate
+        self.learning_rate = 0.01
         
-        # Neural network weights
-        self.weights = {
-            'layer1': np.random.randn(state_size, 64) * 0.1,
-            'bias1': np.zeros(64),
-            'layer2': np.random.randn(64, 32) * 0.1,
-            'bias2': np.zeros(32),
-            'layer3': np.random.randn(32, action_size) * 0.1,
-            'bias3': np.zeros(action_size)
-        }
-    
-    def relu(self, x):
-        return np.maximum(0, x)
-    
+        # Simple Neural Network Weights (NumPy implementation for speed in Streamlit)
+        # Architecture: 4 (Input) -> 64 (Hidden) -> 32 (Hidden) -> 4 (Output)
+        np.random.seed(42)
+        self.W1 = np.random.randn(state_size, 64) / np.sqrt(state_size)
+        self.b1 = np.zeros((1, 64))
+        self.W2 = np.random.randn(64, 32) / np.sqrt(64)
+        self.b2 = np.zeros((1, 32))
+        self.W3 = np.random.randn(32, action_size) / np.sqrt(32)
+        self.b3 = np.zeros((1, action_size))
+
+    def relu(self, z):
+        return np.maximum(0, z)
+
+    def relu_deriv(self, z):
+        return (z > 0).astype(float)
+
     def forward(self, state):
-        layer1_output = self.relu(np.dot(state, self.weights['layer1']) + self.weights['bias1'])
-        layer2_output = self.relu(np.dot(layer1_output, self.weights['layer2']) + self.weights['bias2'])
-        q_values = np.dot(layer2_output, self.weights['layer3']) + self.weights['bias3']
-        return q_values, layer1_output, layer2_output
-    
+        # Reshape state if necessary
+        if state.ndim == 1:
+            state = state.reshape(1, -1)
+            
+        # Layer 1
+        z1 = np.dot(state, self.W1) + self.b1
+        a1 = self.relu(z1)
+        
+        # Layer 2
+        z2 = np.dot(a1, self.W2) + self.b2
+        a2 = self.relu(z2)
+        
+        # Output Layer (Q-Values)
+        z3 = np.dot(a2, self.W3) + self.b3
+        q_values = z3 # Linear activation for output
+        
+        # We return EVERYTHING so we can inspect the brain, 
+        # but this caused the error before. We handle it in replay() now.
+        return q_values, a1, a2, z1, z2
+
     def act(self, state):
+        # Epsilon-greedy strategy (Explore vs Exploit)
         if np.random.rand() <= self.epsilon:
-            return np.random.randint(self.action_size)
-        q_values, _, _ = self.forward(state) # Correctly unpack the tuple
-        return np.argmax(q_values)
-    
+            return random.randrange(self.action_size)
+        
+        q_values, _, _, _, _ = self.forward(state)
+        return np.argmax(q_values[0])
+
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
-    
+
     def replay(self, batch_size=32):
         if len(self.memory) < batch_size:
-            return 0.0
+            return 0
         
-        indices = np.random.choice(len(self.memory), batch_size, replace=False)
-        batch = [self.memory[i] for i in indices]
-        total_loss = 0.0
+        batch = random.sample(self.memory, batch_size)
+        loss = 0
         
         for state, action, reward, next_state, done in batch:
             target = reward
             if not done:
-                next_q_values, _, _ = self.forward(next_state) # Unpack the values
-                target += self.gamma * np.max(next_q_values)
+                # FIX: Using *rest to ignore extra return values (activations)
+                next_q_values, *rest = self.forward(next_state)
+                target = reward + self.gamma * np.max(next_q_values)
             
-            q_values, layer1_output, layer2_output = self.forward(state) # Unpack the values
-            target_f = q_values.copy()
-            target_f[action] = target
+            # Forward pass for current state
+            current_q, a1, a2, z1, z2 = self.forward(state)
             
-            loss = np.mean((q_values - target_f) ** 2)
-            total_loss += loss
+            # The target for the specific action we took
+            target_f = current_q.copy()
+            target_f[0][action] = target
             
-            # Backpropagation for the output layer (layer3)
-            grad = 2 * (q_values - target_f) * self.learning_rate
-            self.weights['layer3'] -= np.outer(layer2_output, grad) # Use layer2_output here
-            self.weights['bias3'] -= grad
-        
+            # Calculate Loss (Mean Squared Error) for visualization
+            loss += np.mean((target_f - current_q)**2)
+            
+            # Backpropagation (simplified gradient descent)
+            # Output Error
+            error = target_f - current_q
+            
+            # Backprop through layers (Updating weights)
+            dW3 = np.dot(a2.T, error)
+            db3 = np.sum(error, axis=0, keepdims=True)
+            
+            d2 = np.dot(error, self.W3.T) * self.relu_deriv(z2)
+            dW2 = np.dot(a1.T, d2)
+            db2 = np.sum(d2, axis=0, keepdims=True)
+            
+            d1 = np.dot(d2, self.W2.T) * self.relu_deriv(z1)
+            dW1 = np.dot(state.reshape(1,-1).T, d1)
+            db1 = np.sum(d1, axis=0, keepdims=True)
+            
+            # Apply updates
+            self.W3 += self.learning_rate * dW3
+            self.b3 += self.learning_rate * db3
+            self.W2 += self.learning_rate * dW2
+            self.b2 += self.learning_rate * db2
+            self.W1 += self.learning_rate * dW1
+            self.b1 += self.learning_rate * db1
+            
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
-        
-        return total_loss / batch_size
+            
+        return loss / batch_size
 
-# Initialize session state
+# ==========================================
+# 3. APP LOGIC & STATE MANAGEMENT
+# ==========================================
+
+# Initialize Session State
 if 'agent' not in st.session_state:
     st.session_state.agent = DQNAgent()
-    st.session_state.agent_x = 400.0
-    st.session_state.agent_y = 300.0
-    st.session_state.velocity_x = 0.0
-    st.session_state.velocity_y = 0.0
-    st.session_state.target_x = 600.0
-    st.session_state.target_y = 400.0
-    st.session_state.episodes = 0
-    st.session_state.total_reward = 0.0
-    st.session_state.avg_loss = 0.0
-    st.session_state.training_mode = True
-    st.session_state.steps = 0
-    st.session_state.reward_history = []
+    st.session_state.agent_pos = np.array([50, 50]) # Start in middle of 100x100 grid
+    st.session_state.target_pos = np.array([80, 20]) # Initial target
+    st.session_state.step_count = 0
+    st.session_state.rewards_history = []
     st.session_state.loss_history = []
-    st.session_state.trajectory_x = [400.0]
-    st.session_state.trajectory_y = [300.0]
+    st.session_state.wins = 0
 
-# Constants
-CANVAS_WIDTH = 800
-CANVAS_HEIGHT = 600
-MAX_SPEED = 5.0
-ACTIONS = {
-    0: (0, -1),   # UP
-    1: (0, 1),    # DOWN
-    2: (-1, 0),   # LEFT
-    3: (1, 0)     # RIGHT
-}
+def reset_game():
+    st.session_state.agent_pos = np.array([50, 50])
+    st.session_state.target_pos = np.random.randint(0, 100, size=2)
+    st.session_state.step_count = 0
 
-def get_state():
-    dx = st.session_state.target_x - st.session_state.agent_x
-    dy = st.session_state.target_y - st.session_state.agent_y
+# ==========================================
+# 4. SIDEBAR DASHBOARD
+# ==========================================
+with st.sidebar:
+    st.title("🔬 Lab Controls")
     
-    dx_norm = np.clip(dx / CANVAS_WIDTH, -1, 1)
-    dy_norm = np.clip(dy / CANVAS_HEIGHT, -1, 1)
-    vx_norm = st.session_state.velocity_x / MAX_SPEED
-    vy_norm = st.session_state.velocity_y / MAX_SPEED
+    st.metric("🧬 Generation (Steps)", st.session_state.step_count)
+    st.metric("🍪 Targets Eaten", st.session_state.wins)
+    st.metric("🧠 Brain Plasticity (Epsilon)", f"{st.session_state.agent.epsilon:.4f}")
     
-    return np.array([dx_norm, dy_norm, vx_norm, vy_norm])
+    if st.button("Reset Simulation"):
+        reset_game()
+        st.session_state.agent = DQNAgent() # New brain
+        
+    st.markdown("### Neural Status")
+    if len(st.session_state.loss_history) > 0:
+        st.line_chart(st.session_state.loss_history[-50:])
+        st.caption("Learning Loss (Lower is better)")
 
-def calculate_reward(old_distance, new_distance):
-    progress = old_distance - new_distance
-    
-    if new_distance < 20:
-        return 10.0
-    elif progress > 0:
-        return progress * 0.5
-    else:
-        return progress * 1.0
+# ==========================================
+# 5. MAIN SIMULATION AREA
+# ==========================================
+st.title("Project Newborn: The Learning AI")
+st.markdown("This AI is a **Baby**. It starts knowing nothing. Click 'Take Step' to let it move and learn. It gets a 'cookie' (Reward +1) when it gets closer to the target.")
 
-def step_simulation():
-    old_state = get_state()
-    old_x, old_y = st.session_state.agent_x, st.session_state.agent_y
-    old_distance = np.sqrt((st.session_state.target_x - old_x)**2 + 
-                          (st.session_state.target_y - old_y)**2)
-    
-    action = st.session_state.agent.act(old_state)
-    dx, dy = ACTIONS[action]
-    
-    st.session_state.velocity_x = st.session_state.velocity_x * 0.8 + dx * 2.0
-    st.session_state.velocity_y = st.session_state.velocity_y * 0.8 + dy * 2.0
-    
-    speed = np.sqrt(st.session_state.velocity_x**2 + st.session_state.velocity_y**2)
-    if speed > MAX_SPEED:
-        st.session_state.velocity_x = (st.session_state.velocity_x / speed) * MAX_SPEED
-        st.session_state.velocity_y = (st.session_state.velocity_y / speed) * MAX_SPEED
-    
-    st.session_state.agent_x += st.session_state.velocity_x
-    st.session_state.agent_y += st.session_state.velocity_y
-    
-    st.session_state.agent_x = np.clip(st.session_state.agent_x, 0, CANVAS_WIDTH)
-    st.session_state.agent_y = np.clip(st.session_state.agent_y, 0, CANVAS_HEIGHT)
-    
-    # Track trajectory
-    st.session_state.trajectory_x.append(st.session_state.agent_x)
-    st.session_state.trajectory_y.append(st.session_state.agent_y)
-    if len(st.session_state.trajectory_x) > 200:
-        st.session_state.trajectory_x.pop(0)
-        st.session_state.trajectory_y.pop(0)
-    
-    new_distance = np.sqrt((st.session_state.target_x - st.session_state.agent_x)**2 + 
-                          (st.session_state.target_y - st.session_state.agent_y)**2)
-    reward = calculate_reward(old_distance, new_distance)
-    done = new_distance < 20
-    
-    new_state = get_state()
-    
-    if st.session_state.training_mode:
-        st.session_state.agent.remember(old_state, action, reward, new_state, done)
-        loss = st.session_state.agent.replay(batch_size=32)
-        st.session_state.avg_loss = loss
-        st.session_state.loss_history.append(loss)
-    
-    st.session_state.total_reward += reward
-    st.session_state.steps += 1
-    
-    if done:
-        st.session_state.episodes += 1
-        st.session_state.reward_history.append(st.session_state.total_reward)
-        st.session_state.target_x = np.random.uniform(50, CANVAS_WIDTH - 50)
-        st.session_state.target_y = np.random.uniform(50, CANVAS_HEIGHT - 50)
-        st.session_state.trajectory_x = [st.session_state.agent_x]
-        st.session_state.trajectory_y = [st.session_state.agent_y]
-        return True
-    
-    return False
-
-# Header
 col1, col2 = st.columns([3, 1])
+
 with col1:
-    st.title("🔷 Autonomous AI Agent")
-    st.caption("Deep Q-Network with Experience Replay | Neural Architecture: 4→64→32→4")
-with col2:
-    st.metric("Neural Network", "Active", delta="DQN")
-
-# Main layout
-main_col, sidebar_col = st.columns([2, 1])
-
-with main_col:
-    st.markdown("### Simulation Environment")
-    
-    # Create Plotly figure
+    # ------------------------------------
+    # A. VISUALIZATION (Plotly Grid World)
+    # ------------------------------------
     fig = go.Figure()
-    
-    # Add grid background
-    for i in range(0, CANVAS_WIDTH, 40):
-        fig.add_shape(type="line", x0=i, y0=0, x1=i, y1=CANVAS_HEIGHT,
-                     line=dict(color="rgba(100, 200, 255, 0.1)", width=1))
-    for i in range(0, CANVAS_HEIGHT, 40):
-        fig.add_shape(type="line", x0=0, y0=i, x1=CANVAS_WIDTH, y1=i,
-                     line=dict(color="rgba(100, 200, 255, 0.1)", width=1))
-    
-    # Add trajectory
-    if len(st.session_state.trajectory_x) > 1:
-        fig.add_trace(go.Scatter(
-            x=st.session_state.trajectory_x,
-            y=st.session_state.trajectory_y,
-            mode='lines',
-            line=dict(color='rgba(0, 255, 150, 0.3)', width=2),
-            showlegend=False,
-            hoverinfo='skip'
-        ))
-    
-    # Add connection line
+
+    # The Arena
+    fig.add_shape(type="rect", x0=0, y0=0, x1=100, y1=100, 
+                  line=dict(color="RoyalBlue", width=2), fillcolor="rgba(0,0,0,0)")
+
+    # The Agent (Baby)
     fig.add_trace(go.Scatter(
-        x=[st.session_state.agent_x, st.session_state.target_x],
-        y=[st.session_state.agent_y, st.session_state.target_y],
-        mode='lines',
-        line=dict(color='rgba(100, 150, 255, 0.3)', width=1, dash='dash'),
-        showlegend=False,
-        hoverinfo='skip'
+        x=[st.session_state.agent_pos[0]], 
+        y=[st.session_state.agent_pos[1]],
+        mode='markers+text',
+        marker=dict(size=20, color='#00ddff', symbol='circle'),
+        text=["👶"], textposition="top center",
+        name='AI Agent'
     ))
-    
-    # Add target
+
+    # The Target (Mouse Cursor / Food)
     fig.add_trace(go.Scatter(
-        x=[st.session_state.target_x],
-        y=[st.session_state.target_y],
-        mode='markers',
-        marker=dict(
-            size=30,
-            color='rgba(255, 100, 100, 0.8)',
-            line=dict(color='rgba(255, 100, 100, 1)', width=2)
-        ),
-        name='Target',
-        hovertemplate='Target<br>X: %{x:.0f}<br>Y: %{y:.0f}<extra></extra>'
+        x=[st.session_state.target_pos[0]], 
+        y=[st.session_state.target_pos[1]],
+        mode='markers+text',
+        marker=dict(size=15, color='#ff0055', symbol='x'),
+        text=["🍪"], textposition="top center",
+        name='Target'
     ))
-    
-    # Add agent
-    fig.add_trace(go.Scatter(
-        x=[st.session_state.agent_x],
-        y=[st.session_state.agent_y],
-        mode='markers',
-        marker=dict(
-            size=25,
-            color='rgba(0, 255, 150, 0.9)',
-            line=dict(color='rgba(0, 255, 200, 1)', width=2)
-        ),
-        name='AI Agent',
-        hovertemplate='Agent<br>X: %{x:.0f}<br>Y: %{y:.0f}<extra></extra>'
-    ))
-    
-    # Update layout
+
     fig.update_layout(
-        width=CANVAS_WIDTH,
-        height=CANVAS_HEIGHT,
-        plot_bgcolor='rgba(26, 26, 46, 0.9)',
-        paper_bgcolor='rgba(15, 15, 30, 0.8)',
-        xaxis=dict(range=[0, CANVAS_WIDTH], showgrid=False, zeroline=False, visible=False),
-        yaxis=dict(range=[0, CANVAS_HEIGHT], showgrid=False, zeroline=False, visible=False),
-        showlegend=True,
-        legend=dict(x=0.02, y=0.98, bgcolor='rgba(0,0,0,0.5)', font=dict(color='white')),
+        xaxis=dict(range=[-5, 105], showgrid=True, zeroline=False, visible=False),
+        yaxis=dict(range=[-5, 105], showgrid=True, zeroline=False, visible=False, scaleanchor="x", scaleratio=1),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
         margin=dict(l=0, r=0, t=0, b=0),
-        hovermode='closest'
+        height=500
     )
     
-    st.plotly_chart(fig, use_container_width=False)
-    
-    # Controls
-    st.markdown("---")
-    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns(4)
-    
-    with ctrl_col1:
-        if st.button("▶ Run Step", use_container_width=True):
-            step_simulation()
-            st.rerun()
-    
-    with ctrl_col2:
-        if st.button("⏩ Run 10 Steps", use_container_width=True):
-            for _ in range(10):
-                if step_simulation():
-                    break
-            st.rerun()
-    
-    with ctrl_col3:
-        if st.button("🎯 New Target", use_container_width=True):
-            st.session_state.target_x = np.random.uniform(50, CANVAS_WIDTH - 50)
-            st.session_state.target_y = np.random.uniform(50, CANVAS_HEIGHT - 50)
-            st.rerun()
-    
-    with ctrl_col4:
-        if st.button("🔄 Reset", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+    st.plotly_chart(fig, use_container_width=True)
 
-with sidebar_col:
-    st.markdown("### Agent Statistics")
+    # ------------------------------------
+    # B. MANUAL INTERACTION (Click to Move Target)
+    # ------------------------------------
+    # Note: Streamlit doesn't support direct click-to-coordinate easily without plugins.
+    # We simulate it with sliders for robust functionality.
+    st.markdown("### 🎯 Move the Target")
+    new_tx = st.slider("Target X", 0, 100, int(st.session_state.target_pos[0]), key="sx")
+    new_ty = st.slider("Target Y", 0, 100, int(st.session_state.target_pos[1]), key="sy")
     
-    epsilon = st.session_state.agent.epsilon
-    if epsilon > 0.5:
-        status = "EXPLORING"
-        status_class = "status-learning"
-    elif epsilon > 0.1:
-        status = "LEARNING"
-        status_class = "status-learning"
-    else:
-        status = "CONVERGED"
-        status_class = "status-converged"
+    # Check if target moved manually
+    if new_tx != st.session_state.target_pos[0] or new_ty != st.session_state.target_pos[1]:
+        st.session_state.target_pos = np.array([new_tx, new_ty])
+        st.rerun()
+
+with col2:
+    # ------------------------------------
+    # C. GAME LOOP & TRAINING
+    # ------------------------------------
+    st.markdown("### 🕹️ Controls")
     
-    st.markdown(f'<p class="{status_class}">Status: {status}</p>', unsafe_allow_html=True)
+    # Calculate State: [AgentX, AgentY, TargetX, TargetY] normalized
+    state = np.array([
+        st.session_state.agent_pos[0]/100, 
+        st.session_state.agent_pos[1]/100, 
+        st.session_state.target_pos[0]/100, 
+        st.session_state.target_pos[1]/100
+    ])
     
-    st.metric("Episodes", st.session_state.episodes)
-    st.metric("Steps", st.session_state.steps)
-    st.metric("Reward", f"{st.session_state.total_reward:.2f}")
-    st.metric("Exploration (ε)", f"{epsilon:.4f}")
-    st.metric("Loss", f"{st.session_state.avg_loss:.6f}")
+    # Distance before moving
+    dist_before = np.linalg.norm(st.session_state.agent_pos - st.session_state.target_pos)
     
-    distance = np.sqrt((st.session_state.target_x - st.session_state.agent_x)**2 + 
-                      (st.session_state.target_y - st.session_state.agent_y)**2)
-    st.metric("Distance", f"{distance:.1f}px")
-    
-    speed = np.sqrt(st.session_state.velocity_x**2 + st.session_state.velocity_y**2)
-    st.metric("Speed", f"{speed:.2f}")
-    
-    st.markdown("---")
-    st.session_state.training_mode = st.checkbox("Training Mode", value=st.session_state.training_mode)
-    
-    with st.expander("🧠 Network Details"):
-        st.markdown(f"""
-        **Architecture:**
-        - Input: 4 neurons
-        - Hidden 1: 64 neurons (ReLU)
-        - Hidden 2: 32 neurons (ReLU)
-        - Output: 4 neurons (Q-values)
+    if st.button("RUN STEP (Train)", type="primary", use_container_width=True):
         
-        **Hyperparameters:**
-        - Learning rate: {st.session_state.agent.learning_rate}
-        - Discount (γ): {st.session_state.agent.gamma}
-        - Memory: {len(st.session_state.agent.memory)}/2000
-        - Batch size: 32
-        """)
-    
-    if len(st.session_state.reward_history) > 0:
-        with st.expander("📊 Performance"):
-            st.line_chart(st.session_state.reward_history[-50:])
-            st.caption("Episode Rewards")
+        # 1. AI Chooses Action
+        action = st.session_state.agent.act(state)
+        
+        # 2. Perform Action (0: Up, 1: Down, 2: Left, 3: Right)
+        move_dist = 5
+        old_pos = st.session_state.agent_pos.copy()
+        
+        if action == 0: st.session_state.agent_pos[1] += move_dist # Up
+        elif action == 1: st.session_state.agent_pos[1] -= move_dist # Down
+        elif action == 2: st.session_state.agent_pos[0] -= move_dist # Left
+        elif action == 3: st.session_state.agent_pos[0] += move_dist # Right
+        
+        # Boundary Check
+        st.session_state.agent_pos = np.clip(st.session_state.agent_pos, 0, 100)
+        
+        # 3. Calculate Reward
+        dist_after = np.linalg.norm(st.session_state.agent_pos - st.session_state.target_pos)
+        
+        reward = 0
+        done = False
+        
+        if dist_after < 5: # Reached target
+            reward = 10
+            done = True
+            st.session_state.wins += 1
+            st.toast("🍪 Yummy! Target reached!", icon="🎉")
+            st.session_state.target_pos = np.random.randint(10, 90, size=2)
+        elif dist_after < dist_before:
+            reward = 1 # Good boy, getting closer
+        else:
+            reward = -1 # Wrong way!
             
-            if len(st.session_state.loss_history) > 10:
-                st.line_chart(st.session_state.loss_history[-100:])
-                st.caption("Training Loss")
+        # 4. Remember & Train
+        next_state = np.array([
+            st.session_state.agent_pos[0]/100, 
+            st.session_state.agent_pos[1]/100, 
+            st.session_state.target_pos[0]/100, 
+            st.session_state.target_pos[1]/100
+        ])
+        
+        st.session_state.agent.remember(state, action, reward, next_state, done)
+        loss = st.session_state.agent.replay(batch_size=8) # Small batch for realtime feel
+        
+        if loss:
+            st.session_state.loss_history.append(loss)
+            
+        st.session_state.step_count += 1
+        st.rerun()
 
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #888; font-size: 0.85em;'>
-    Deep Q-Network | Experience Replay | Continuous State Space | Compatible with ROS2/Robotics
-</div>
-""", unsafe_allow_html=True)
+    # Debug Info
+    st.markdown("---")
+    st.write(f"**Distance:** {dist_before:.1f}")
+    st.write(f"**Last Action:** {['Up','Down','Left','Right'][st.session_state.agent.act(state)]} (Predicted)")
