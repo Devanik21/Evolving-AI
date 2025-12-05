@@ -164,8 +164,8 @@ class DQNAgent:
 # 3. APP LOGIC & STATE MANAGEMENT
 # ==========================================
 
-# Initialize Session State
-if 'agent' not in st.session_state:
+def initialize_state():
+    """Initializes or resets all necessary session state variables."""
     st.session_state.agent = DQNAgent()
     st.session_state.agent_pos = np.array([50, 50]) # Start in middle of 100x100 grid
     st.session_state.target_pos = np.array([80, 20]) # Initial target
@@ -174,10 +174,9 @@ if 'agent' not in st.session_state:
     st.session_state.loss_history = []
     st.session_state.wins = 0
 
-def reset_game():
-    st.session_state.agent_pos = np.array([50, 50])
-    st.session_state.target_pos = np.random.randint(0, 100, size=2)
-    st.session_state.step_count = 0
+# Initialize Session State if it doesn't exist
+if 'agent' not in st.session_state:
+    initialize_state()
 
 # ==========================================
 # 4. SIDEBAR DASHBOARD
@@ -190,8 +189,8 @@ with st.sidebar:
     st.metric("🧠 Brain Plasticity (Epsilon)", f"{st.session_state.agent.epsilon:.4f}")
     
     if st.button("Reset Simulation"):
-        reset_game()
-        st.session_state.agent = DQNAgent() # New brain
+        initialize_state() # Full reset
+        st.rerun()
         
     st.markdown("### Neural Status")
     if len(st.session_state.loss_history) > 0:
