@@ -196,7 +196,7 @@ class AdvancedMind:
         
         loss_val = 0
         new_priorities = []
-        for state, action, reward, next_state, done in batch:
+        for i, (state, action, reward, next_state, done) in enumerate(batch):
             target = reward
             if not done:
                 # Double DQN Logic: Select action with Online, Evaluate with Target
