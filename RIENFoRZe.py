@@ -684,10 +684,10 @@ with right_col:
     st.markdown("### 🌍 World View")
     
     # Create visualization
-    world_container = st.container()
+    world_container = st.container() # This container is just for the grid now
     
+    # Canvas
     with world_container:
-        # Canvas
         st.markdown("<div class='world-container'>", unsafe_allow_html=True)
         
         # Create grid
@@ -714,43 +714,42 @@ with right_col:
         # Inject custom style for the code block
         st.markdown("<style>.stCodeBlock { background: transparent !important; }</style>", unsafe_allow_html=True)
 
-
         st.markdown("</div>", unsafe_allow_html=True)
         
-        # Status cards
-        st.markdown("<br>", unsafe_allow_html=True)
+    # Status cards (moved outside the world_container)
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        st.markdown(f"""
+        <div class='status-card'>
+            <div class='status-label'>Emotional State</div>
+            <div class='status-value'>{st.session_state.personality.get_emotional_summary()}</div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        col_a, col_b = st.columns(2)
+        st.markdown(f"""
+        <div class='status-card'>
+            <div class='status-label'>Energy</div>
+            <div class='status-value'>{st.session_state.agent.energy:.1f}%</div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        with col_a:
-            st.markdown(f"""
-            <div class='status-card'>
-                <div class='status-label'>Emotional State</div>
-                <div class='status-value'>{st.session_state.personality.get_emotional_summary()}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown(f"""
-            <div class='status-card'>
-                <div class='status-label'>Energy</div>
-                <div class='status-value'>{st.session_state.agent.energy:.1f}%</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with col_b:
-            st.markdown(f"""
-            <div class='status-card'>
-                <div class='status-label'>Learning Rate</div>
-                <div class='status-value'>{st.session_state.brain.epsilon:.3f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown(f"""
-            <div class='status-card'>
-                <div class='status-label'>Targets Found</div>
-                <div class='status-value'>{st.session_state.agent.targets_reached}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    with col_b:
+        st.markdown(f"""
+        <div class='status-card'>
+            <div class='status-label'>Learning Rate</div>
+            <div class='status-value'>{st.session_state.brain.epsilon:.3f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div class='status-card'>
+            <div class='status-label'>Targets Found</div>
+            <div class='status-value'>{st.session_state.agent.targets_reached}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
