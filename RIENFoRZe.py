@@ -386,9 +386,12 @@ class PersonalityCore:
 # ==========================================
 # 4. APP STATE INITIALIZATION (Self-Correcting)
 # ==========================================
+# ==========================================
+# 4. APP STATE INITIALIZATION (Self-Correcting)
+# ==========================================
 if 'mind' not in st.session_state:
     st.session_state.mind = AdvancedMind()
-    st.session_state.soul = AGICore() # Start with AGI for new sessions
+    st.session_state.soul = AGICore() # Start with AGI
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.step_count = 0
@@ -397,14 +400,16 @@ if 'mind' not in st.session_state:
     st.session_state.chat_history = []
     st.session_state.is_hugging = False
 
-# --- HOTFIX FOR PERSISTENT MEMORY ---
-# This checks if the old 'PersonalityCore' is still loaded.
-# If the 'soul' doesn't have 'thought_process', we force an upgrade to AGICore.
-if hasattr(st.session_state, 'soul') and not hasattr(st.session_state.soul, 'thought_process'):
-    st.session_state.soul = AGICore()
-    st.toast("♻️ System Kernel Upgraded to AGI-Core successfully!")
-    time.sleep(1) # Brief pause to let the toast show
-    st.rerun()    # Rerun the app with the new soul installed
+# --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
+# This checks if the 'soul' is missing the 'current_mood' attribute.
+# If it is missing, we force a complete brain transplant to the new AGICore.
+if hasattr(st.session_state, 'soul'):
+    # Check if we are missing critical attributes
+    if not hasattr(st.session_state.soul, 'current_mood') or not hasattr(st.session_state.soul, 'energy'):
+        st.session_state.soul = AGICore() # FORCE UPDATE
+        st.toast("❤️ Emotional Core Installed Successfully!")
+        time.sleep(0.5)
+        st.rerun()
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
     """
