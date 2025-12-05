@@ -133,7 +133,11 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
     }
-
+    
+    /* Hide Streamlit Branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 
     /* Code block in world view */
     .stCodeBlock {
@@ -642,34 +646,29 @@ with left_col:
     # Input
     user_input = st.chat_input("Share your thoughts...")
     
+    # Process chat input and generate response in one go
     if user_input:
         # Add user message
         st.session_state.chat_history.append({
             'type': 'user',
             'content': user_input
         })
-        
-        # Add thinking indicator
-        st.session_state.chat_history.append({
-            'type': 'thinking',
-            'content': 'thinking...'
-        })
-        st.rerun()
-    
-    # Process response after thinking
-    if st.session_state.chat_history and st.session_state.chat_history[-1]['type'] == 'thinking':
-        time.sleep(0.5)  # Brief pause for realism
-        st.session_state.chat_history.pop()  # Remove thinking indicator
-        
+
+        # Display a temporary "thinking..." message while generating the response
+        with chat_container:
+             st.markdown(f"<div class='user-message'>{user_input}</div>", unsafe_allow_html=True)
+             with st.spinner('thinking...'):
+                time.sleep(0.5) # Brief pause for realism
+
         # Generate response
-        last_user_msg = [msg for msg in st.session_state.chat_history if msg['type'] == 'user'][-1]['content']
-        st.session_state.personality.process_input(last_user_msg)
-        response = st.session_state.personality.generate_response(last_user_msg)
+        st.session_state.personality.process_input(user_input)
+        response = st.session_state.personality.generate_response(user_input)
         
         st.session_state.chat_history.append({
             'type': 'ai',
             'content': response
         })
+        # Rerun once to display the new messages
         st.rerun()
     
     st.markdown("</div>", unsafe_allow_html=True)
