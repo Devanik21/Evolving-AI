@@ -92,20 +92,21 @@ class DQNAgent:
         for state, action, reward, next_state, done in batch:
             target = reward
             if not done:
-                target += self.gamma * np.max(self.forward(next_state))
+                next_q_values, _, _ = self.forward(next_state)
+                target += self.gamma * np.max(next_q_values)
             
-            q_values = self.forward(state)
+            q_values, layer1_output, layer2_output = self.forward(state)
             target_f = q_values.copy()
             target_f[action] = target
             
             loss = np.mean((q_values - target_f) ** 2)
             total_loss += loss
             
-            # Simplified gradient descent
-            grad = 2 * (q_values - target_f) * self.learning_rate * 0.01
-            error = np.zeros((self.state_size, self.action_size))
-            error[:, action] = grad[action]
-            self.weights['layer3'] -= np.outer(state, grad) * 0.001
+            # Simplified backpropagation
+            # Update layer 3
+            grad = 2 * (q_values - target_f) * self.learning_rate
+            self.weights['layer3'] -= np.outer(layer2_output, grad)
+            self.weights['bias3'] -= grad
         
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
