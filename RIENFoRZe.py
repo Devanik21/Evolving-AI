@@ -416,13 +416,16 @@ if 'mind' not in st.session_state:
 # --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
 # This checks if the 'soul' is missing the 'current_mood' attribute.
 # If it is missing, we force a complete brain transplant to the new AGICore.
+# --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
+# Checks if the 'soul' object is outdated or missing the new 'update' function
 if hasattr(st.session_state, 'soul'):
-    # Check if we are missing critical attributes
-    if not hasattr(st.session_state.soul, 'current_mood') or not hasattr(st.session_state.soul, 'energy'):
-        st.session_state.soul = AGICore() # FORCE UPDATE
-        st.toast("❤️ Emotional Core Installed Successfully!")
+    # We check if the existing object has the 'update' method. If not, it's an old version!
+    if not hasattr(st.session_state.soul, 'update') or not hasattr(st.session_state.soul, 'current_mood'):
+        st.session_state.soul = AGICore() # FORCE REBOOT
+        st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
         time.sleep(0.5)
         st.rerun()
+    
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
     """
@@ -529,6 +532,25 @@ def process_step():
         st.session_state.mind.update_target_network()
 
     st.session_state.step_count += 1
+
+
+
+
+
+
+
+
+def reset_simulation():
+    """Resets the agent, target, and stats."""
+    st.session_state.agent_pos = np.array([50.0, 50.0])
+    st.session_state.target_pos = np.array([80.0, 20.0])
+    st.session_state.soul = AGICore() # Reset the AI Personality
+    st.session_state.mind = AdvancedMind() # Reset the Neural Network
+    st.session_state.step_count = 0
+    st.session_state.wins = 0
+    st.session_state.chat_history = []
+    st.session_state.is_hugging = False
+    st.toast("🔄 Simulation Hard Reset Complete")
 
 # ==========================================
 # 5. UI LAYOUT
