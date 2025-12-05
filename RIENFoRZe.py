@@ -1,10 +1,9 @@
 import streamlit as st
 import numpy as np
-import plotly.graph_objects as go
 import random
 from collections import deque
 import time
-import math
+import re # For parsing user commands
 
 # ==========================================
 # 1. ADVANCED CONFIGURATION & CSS
@@ -298,6 +297,30 @@ def reset_simulation():
             del st.session_state[key]
     st.rerun()
 
+def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
+    """
+    Uses Breadth-First Search (BFS) to find a path on a discrete grid.
+    This is a simulated planning ability for the chat feature.
+    """
+    grid_h, grid_w = grid_size
+    start = (int(start_pos[1] / 100 * (grid_h -1)), int(start_pos[0] / 100 * (grid_w - 1)))
+    end = (int(target_pos[1] / 100 * (grid_h-1)), int(target_pos[0] / 100 * (grid_w - 1)))
+
+    queue = deque([[start]])
+    seen = {start}
+    
+    while queue:
+        path = queue.popleft()
+        y, x = path[-1]
+        if (y, x) == end:
+            return path # Found the path
+        for dy, dx in [(0, 1), (0, -1), (1, 0), (-1, 0)]: # Right, Left, Down, Up
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < grid_h and 0 <= nx < grid_w and (ny, nx) not in seen:
+                seen.add((ny, nx))
+                queue.append(path + [(ny, nx)])
+    return None # No path found
+
 def process_step():
     # 1. Sense Environment
     # Inputs: Normalized X, Y, Target X, Target Y, Energy
@@ -388,60 +411,36 @@ row1_1, row1_2 = st.columns([2, 1])
 
 with row1_1:
     # -----------------------------------
-    # THE "WORLD" (Plotly Visualization)
+    # THE "WORLD" (ASCII Visualization)
     # -----------------------------------
-    # We use a trick to make the marker change size based on "breathing"
-    breath = math.sin(time.time() * 5) * 2
+    st.markdown("### 🌍 Containment Field")
+    grid_height = 15
+    grid_width = 40
     
-    fig = go.Figure()
+    # Create an empty grid
+    grid = [['.' for _ in range(grid_width)] for _ in range(grid_height)]
     
-    # The Agent (Complex Symbol)
-    fig.add_trace(go.Scatter(
-        x=[st.session_state.agent_pos[0]], 
-        y=[st.session_state.agent_pos[1]],
-        mode='markers+text',
-        marker=dict(
-            size=25 + breath, 
-            color='#00ddff', 
-            symbol='circle-dot',
-            line=dict(color='white', width=2)
-        ),
-        text=[st.session_state.soul.moods[st.session_state.soul.current_mood]],
-        textposition="top center",
-        textfont=dict(size=14, color='white'),
-        name='ALIVE'
-    ))
-    
-    # The Target (Lure)
-    fig.add_trace(go.Scatter(
-        x=[st.session_state.target_pos[0]], 
-        y=[st.session_state.target_pos[1]],
-        mode='markers',
-        marker=dict(
-            size=15, 
-            color='#ff0055', 
-            symbol='diamond',
-            line=dict(color='white', width=1)
-        ),
-        name='Attractor'
-    ))
+    # Scale positions to fit the grid
+    agent_y = int(st.session_state.agent_pos[1] / 100 * (grid_height - 1))
+    agent_x = int(st.session_state.agent_pos[0] / 100 * (grid_width - 1))
+    target_y = int(st.session_state.target_pos[1] / 100 * (grid_height - 1))
+    target_x = int(st.session_state.target_pos[0] / 100 * (grid_width - 1))
 
-    fig.update_layout(
-        xaxis=dict(range=[0, 100], showgrid=False, zeroline=False, visible=False),
-        yaxis=dict(range=[0, 100], showgrid=False, zeroline=False, visible=False, scaleanchor="x"),
-        plot_bgcolor='rgba(15, 15, 30, 0.8)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=450,
-        showlegend=False
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
+    # Place agent and target
+    # Ensure they don't overwrite each other for clarity
+    if (agent_y, agent_x) == (target_y, target_x):
+        grid[agent_y][agent_x] = '💥'
+    else:
+        grid[agent_y][agent_x] = st.session_state.soul.moods[st.session_state.soul.current_mood]
+        grid[target_y][target_x] = '💎'
+
+    # Convert grid to a single string and display
+    grid_str = "\n".join(" ".join(row) for row in grid)
+    st.code(grid_str, language=None)
     
     # Manual Override (The "Lure")
     st.markdown("### 🧲 Focus Attention (Lure)")
     cx, cy = st.columns(2)
-    # Using sliders as "Hover" replacement for Python backend
     tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx')
     ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty')
     
@@ -471,15 +470,41 @@ with row1_2:
             <b>You:</b> {user_input}
         </div>
         """, unsafe_allow_html=True)
-        # NLP Placeholder: Simple keyword reaction
+        
+        # NLP: Keyword and pattern matching
+        user_input_lower = user_input.lower()
+        
+        # Pattern to find coordinates like "at 20, 80" or "to 20 80"
+        coord_match = re.search(r'(\d+)\s*,\s*(\d+)', user_input_lower)
+
         if "good" in user_input.lower():
             st.session_state.soul.current_mood = "Happy"
             st.session_state.soul.energy += 10
+            st.session_state.soul.last_chat = "Thank you! Your feedback is a positive reward."
             st.toast("AI felt your praise! ❤️")
-        elif "come" in user_input.lower():
-            # Teleport target closer to agent
-            st.session_state.target_pos = st.session_state.agent_pos + np.random.randint(-10, 10, 2)
-            st.toast("AI is looking for you! 👀")
+        elif "how" in user_input_lower and "reach" in user_input_lower and coord_match:
+            x, y = map(int, coord_match.groups())
+            st.session_state.soul.last_chat = f"Calculating path to ({x}, {y})..."
+            path = plan_path_to_target(st.session_state.agent_pos, (x,y))
+            if path:
+                # Translate path into directions
+                directions = []
+                for i in range(len(path) - 1):
+                    y1, x1 = path[i]
+                    y2, x2 = path[i+1]
+                    if y2 > y1: directions.append("Down")
+                    elif y2 < y1: directions.append("Up")
+                    elif x2 > x1: directions.append("Right")
+                    elif x2 < x1: directions.append("Left")
+                st.session_state.soul.last_chat = f"Path to ({x},{y}) found! Plan: {', '.join(directions[:4])}..."
+            else:
+                st.session_state.soul.last_chat = f"I cannot find a path to ({x},{y}) from here."
+        else:
+            st.session_state.soul.last_chat = random.choice([
+                "I do not understand that command.", 
+                "My language model is still developing.",
+                "Could you rephrase that, Prince?"
+            ])
 
     # -----------------------------------
     # AUTOMATION CONTROL
