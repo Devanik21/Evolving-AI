@@ -121,10 +121,14 @@ st.markdown("""
 # I am building a custom neural engine here to keep this pure Python/NumPy
 # This simulates how PyTorch works under the hood. Educational & Complex.
 
+# ==========================================
+# 2. THE "ENGINE" (Manual Autograd for NumPy)
+# ==========================================
 class Tensor:
     """A wrapper around NumPy arrays to handle gradients."""
     def __init__(self, data, requires_grad=False):
         self.data = np.array(data, dtype=np.float32)
+        # Initialize grad as zeros of the same shape as data
         self.grad = np.zeros_like(self.data) if requires_grad else None
         self.requires_grad = requires_grad
         self.parents = [] # For backprop graph
@@ -135,13 +139,25 @@ class Tensor:
         if grad is None:
             grad = np.ones_like(self.data)
         
-        # FIX: Ensure gradient shape matches data shape before adding
-        # This acts as a safety net for any shape mismatches
-        if self.grad.shape != grad.shape:
-            # Sum across the batch dimension (axis 0) if it was broadcasted
-            if self.grad.shape[0] == 1 and grad.shape[0] > 1:
-                grad = np.sum(grad, axis=0, keepdims=True)
+        # --- CRITICAL FIX: ROBUST SHAPE HANDLING ---
+        # The gradient (grad) coming back might be from a batch (e.g., 32, 32)
+        # but this Tensor might be a bias vector (e.g., 1, 32).
+        # We must sum across the batch dimension (axis 0) if shapes mismatch.
         
+        if self.grad.shape != grad.shape:
+            # Case 1: Batch Broadcast (e.g., grad is (32, 32), self is (1, 32))
+            if grad.ndim == self.grad.ndim and grad.shape[0] > self.grad.shape[0]:
+                grad = np.sum(grad, axis=0, keepdims=True)
+            
+            # Case 2: Squeeze/Reshape issues (Safe fallback)
+            if self.grad.shape != grad.shape:
+                try:
+                    grad = grad.reshape(self.grad.shape)
+                except ValueError:
+                    # If direct reshape fails, force summation on axis 0 as last resort
+                     grad = np.sum(grad, axis=0, keepdims=True)
+
+        # Accumulate gradient
         self.grad += grad
         
         # Propagate to parents
@@ -171,26 +187,14 @@ class Tensor:
 
     def add(self, other):
         """
-        Modified to handle Bias Broadcasting.
-        If we add a Bias (1, N) to a Batch (32, N), the gradient must be summed.
+        Modified to handle Bias Broadcasting safely.
         """
         out_data = self.data + other.data
         out = Tensor(out_data, requires_grad=self.requires_grad or other.requires_grad)
         
-        # Separate gradient functions to handle shapes individually
-        def grad_fn_self(g): 
-            # If self was broadcasted (e.g., is a bias vector), sum the gradients
-            if self.data.shape != g.shape:
-                if self.data.shape[0] == 1 and g.shape[0] > 1:
-                    return np.sum(g, axis=0, keepdims=True)
-            return g
-
-        def grad_fn_other(g): 
-            # If other was broadcasted
-            if other.data.shape != g.shape:
-                 if other.data.shape[0] == 1 and g.shape[0] > 1:
-                    return np.sum(g, axis=0, keepdims=True)
-            return g
+        # The logic is now handled robustly in backward(), so we can keep these simple
+        def grad_fn_self(g): return g
+        def grad_fn_other(g): return g
         
         if self.requires_grad: out.parents.append((self, grad_fn_self))
         if other.requires_grad: out.parents.append((other, grad_fn_other))
@@ -214,7 +218,7 @@ class Tensor:
         out = Tensor(loss_val, requires_grad=self.requires_grad)
         
         def grad_fn(g):
-            # Ensure scalar gradient 'g' is broadcast correctly if needed
+            # Ensure scalar gradient 'g' is broadcast correctly
             return g * (2 * diff) / diff.size
             
         if self.requires_grad: out.parents.append((self, grad_fn))
