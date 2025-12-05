@@ -22,15 +22,17 @@ st.markdown("""
     /* Global Theme - Soft, Modern */
     .stApp {
         background-color: #3C2A21; /* Dark Coffee */
+        color: rgba(255, 255, 255, 0.9);
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     
     /* Main Container */
     .main-container {
-        background: rgba(255, 255, 255, 0.95);
+        background: rgba(20, 20, 20, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 24px;
         padding: 32px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
         backdrop-filter: blur(10px);
     }
     
@@ -47,14 +49,13 @@ st.markdown("""
     }
     
     .ai-message {
-        background: #f7f7f8;
-        color: #1a1a1a;
+        background: #2E2E2E;
+        color: #EAEAEA;
         padding: 16px 20px;
         border-radius: 20px 20px 20px 4px;
         margin: 8px 0;
         max-width: 70%;
         animation: slideInLeft 0.3s ease;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     }
     
     .ai-thinking {
@@ -85,21 +86,21 @@ st.markdown("""
     
     /* World View */
     .world-container {
-        background: linear-gradient(180deg, #e0f7fa 0%, #ffffff 100%);
+        background: rgba(10, 10, 10, 0.3);
         border-radius: 16px;
         padding: 24px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.05);
         position: relative;
         min-height: 400px;
     }
     
     /* Status Cards */
     .status-card {
-        background: white;
+        background: rgba(40, 40, 40, 0.5);
         border-radius: 12px;
         padding: 16px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         margin: 8px 0;
+        border: 1px solid rgba(255, 255, 255, 0.05);
     }
     
     .status-label {
@@ -113,7 +114,7 @@ st.markdown("""
     .status-value {
         font-size: 24px;
         font-weight: 600;
-        color: #1a1a1a;
+        color: #FFFFFF;
     }
     
     /* Buttons */
@@ -137,6 +138,11 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+
+    /* Code block in world view */
+    .stCodeBlock {
+        background: transparent !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -705,6 +711,10 @@ with right_col:
         grid_str = '\n'.join('  '.join(row) for row in grid)
         st.code(grid_str, language=None)
         
+        # Inject custom style for the code block
+        st.markdown("<style>.stCodeBlock { background: transparent !important; }</style>", unsafe_allow_html=True)
+
+
         st.markdown("</div>", unsafe_allow_html=True)
         
         # Status cards
