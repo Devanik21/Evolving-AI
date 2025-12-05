@@ -136,8 +136,8 @@ class AGICore:
             "Neutral": "•_•",
             "Love": "😍"
         }
-        self.current_mood = "Neutral" # Fixed: Was 'emotional_state'
-        self.energy = 100             # Fixed: Added Energy
+        self.current_mood = "Neutral"
+        self.energy = 100
         self.last_chat = "System initialized."
         
         # --- 2. AGI MIND STATS ---
@@ -153,22 +153,36 @@ class AGICore:
             "confusion": ["?", "What?", "Help me understand."]
         }
 
-    def ponder(self, user_input, current_loss):
-        """Generates an inner monologue based on input."""
-        if "bad" in user_input or "stupid" in user_input:
-            self.thought_process = "Analysis: Negative sentiment. Adjusting..."
-            self.relationship_score = max(0, self.relationship_score - 10)
-            self.current_mood = "Sad" # Update mood
-        elif "good" in user_input or "love" in user_input:
-            self.thought_process = "Analysis: Positive reinforcement detected."
-            self.relationship_score = min(100, self.relationship_score + 5)
-            self.current_mood = "Happy" # Update mood
-        elif current_loss > 5:
-            self.thought_process = "System Alert: High uncertainty."
+    # --- THIS WAS MISSING ---
+    def update(self, reward, td_error, recent_wins):
+        """Processes simulation data to update mood/thoughts automatically."""
+        if self.energy < 20:
+            self.current_mood = "Sleeping"
+            self.thought_process = "CRITICAL: Energy low. Reducing cognitive load."
+        elif reward > 10:
+            self.current_mood = "Excited"
+            self.thought_process = "ANALYSIS: Significant success detected! Dopamine release."
+        elif reward < -5:
+            self.current_mood = "Sad"
+            self.thought_process = "ANALYSIS: Negative outcome. Re-evaluating strategy."
+        elif td_error > 5:
             self.current_mood = "Confused"
+            self.thought_process = "ANALYSIS: Surprise event. High learning opportunity."
         else:
-            self.thought_process = f"Processing input: '{user_input}'..."
             self.current_mood = "Neutral"
+            
+    def ponder(self, user_input, current_loss):
+        """Generates an inner monologue based on chat input."""
+        if "bad" in user_input or "stupid" in user_input:
+            self.thought_process = "Input Analysis: Hostility detected. Defense mechanisms active."
+            self.relationship_score = max(0, self.relationship_score - 10)
+            self.current_mood = "Sad"
+        elif "good" in user_input or "love" in user_input:
+            self.thought_process = "Input Analysis: Affection detected. Relationship score increased."
+            self.relationship_score = min(100, self.relationship_score + 5)
+            self.current_mood = "Love"
+        else:
+            self.thought_process = f"Processing query: '{user_input}'..."
 
     def speak(self, user_input):
         self.memory_stream.append(f"User: {user_input}")
@@ -198,7 +212,6 @@ class AGICore:
             
         self.memory_stream.append(f"AI: {reply}")
         return reply
-
 
 
 class AdvancedMind:
