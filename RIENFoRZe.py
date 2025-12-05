@@ -1,335 +1,439 @@
 import streamlit as st
 import numpy as np
-import pandas as pd
 import plotly.graph_objects as go
 import random
 from collections import deque
 import time
+import math
 
 # ==========================================
-# 1. CONFIGURATION & STYLING
+# 1. ADVANCED CONFIGURATION & CSS
 # ==========================================
 st.set_page_config(
-    page_title="Project Newborn: AI Lifeform",
+    page_title="Project A.L.I.V.E.",
     layout="wide",
     initial_sidebar_state="expanded",
-    page_icon="🧬"
+    page_icon="🧿"
 )
 
-# Custom CSS for that Sci-Fi Lab feel
+# Cyberpunk / Sci-Fi Lab Aesthetics
 st.markdown("""
 <style>
+    /* Global Theme */
     .stApp {
-        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+        background: radial-gradient(circle at 50% 50%, #1a1a2e 0%, #0f0f1e 100%);
         color: #e0e0e0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
-    .stMetric {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 10px;
-        border-radius: 5px;
-    }
+    
+    /* Neon Accents */
     .stButton>button {
-        background-color: #00ddff;
-        color: #000;
+        background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%);
+        color: white;
         border: none;
-        border-radius: 4px;
+        border-radius: 8px;
         font-weight: bold;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
     }
-    h1, h2, h3 {
-        color: #00ddff !important;
-        font-family: 'Courier New', monospace;
+    .stButton>button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 0 20px rgba(0, 210, 255, 0.6);
+    }
+    
+    /* Chat Bubbles */
+    .ai-bubble {
+        background-color: rgba(0, 221, 255, 0.1);
+        border-left: 3px solid #00ddff;
+        padding: 15px;
+        border-radius: 0 15px 15px 0;
+        margin-bottom: 10px;
+        animation: fadeIn 0.5s;
+    }
+    .user-bubble {
+        background-color: rgba(255, 0, 85, 0.1);
+        border-right: 3px solid #ff0055;
+        padding: 15px;
+        border-radius: 15px 0 0 15px;
+        text-align: right;
+        margin-bottom: 10px;
+    }
+    
+    @keyframes fadeIn {
+        0% { opacity: 0; transform: translateY(10px); }
+        100% { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Metric Cards */
+    div[data-testid="stMetric"] {
+        background-color: rgba(255, 255, 255, 0.05);
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. THE BRAIN (NEURAL NETWORK)
+# 2. THE ADVANCED MIND (Double Dueling DQN)
 # ==========================================
-class DQNAgent:
-    def __init__(self, state_size=4, action_size=4):
+class AdvancedMind:
+    def __init__(self, state_size=5, action_size=4):
+        # State: [AgentX, AgentY, TargetX, TargetY, Energy]
         self.state_size = state_size
         self.action_size = action_size
-        self.memory = deque(maxlen=2000)
+        self.memory = deque(maxlen=5000)
         
-        # Hyperparameters
-        self.gamma = 0.95    # Discount rate (Future vs Now)
-        self.epsilon = 1.0   # Exploration rate (Curiosity)
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
-        self.learning_rate = 0.01
+        # Hyperparameters (Adaptive)
+        self.gamma = 0.95    
+        self.epsilon = 1.0   
+        self.epsilon_min = 0.05
+        self.epsilon_decay = 0.99
+        self.learning_rate = 0.005
         
-        # Simple Neural Network Weights (NumPy implementation for speed in Streamlit)
-        # Architecture: 4 (Input) -> 64 (Hidden) -> 32 (Hidden) -> 4 (Output)
-        np.random.seed(42)
-        self.W1 = np.random.randn(state_size, 64) / np.sqrt(state_size)
-        self.b1 = np.zeros((1, 64))
-        self.W2 = np.random.randn(64, 32) / np.sqrt(64)
-        self.b2 = np.zeros((1, 32))
-        self.W3 = np.random.randn(32, action_size) / np.sqrt(32)
-        self.b3 = np.zeros((1, action_size))
+        # Dual Networks (Online + Target for stability)
+        self.online_net = self.init_network()
+        self.target_net = self.init_network()
+        self.update_target_network()
+
+    def init_network(self):
+        # Architecture: Dueling DQN (Value Stream + Advantage Stream)
+        # We simulate this complexity with numpy matrices
+        return {
+            'W1': np.random.randn(self.state_size, 64) / np.sqrt(self.state_size),
+            'b1': np.zeros((1, 64)),
+            'W_val': np.random.randn(64, 1) / np.sqrt(64),     # State Value V(s)
+            'b_val': np.zeros((1, 1)),
+            'W_adv': np.random.randn(64, self.action_size) / np.sqrt(64), # Advantage A(s,a)
+            'b_adv': np.zeros((1, self.action_size))
+        }
+
+    def update_target_network(self):
+        # Soft copy weights from Online to Target
+        self.target_net = {k: v.copy() for k, v in self.online_net.items()}
 
     def relu(self, z):
         return np.maximum(0, z)
 
-    def relu_deriv(self, z):
-        return (z > 0).astype(float)
-
-    def forward(self, state):
-        # Reshape state if necessary
-        if state.ndim == 1:
-            state = state.reshape(1, -1)
-            
-        # Layer 1
-        z1 = np.dot(state, self.W1) + self.b1
+    def forward(self, state, network):
+        if state.ndim == 1: state = state.reshape(1, -1)
+        
+        # Shared Layer
+        z1 = np.dot(state, network['W1']) + network['b1']
         a1 = self.relu(z1)
         
-        # Layer 2
-        z2 = np.dot(a1, self.W2) + self.b2
-        a2 = self.relu(z2)
+        # Dueling Streams
+        val = np.dot(a1, network['W_val']) + network['b_val'] # Scalar value of state
+        adv = np.dot(a1, network['W_adv']) + network['b_adv'] # Advantage of each action
         
-        # Output Layer (Q-Values)
-        z3 = np.dot(a2, self.W3) + self.b3
-        q_values = z3 # Linear activation for output
-        
-        # We return EVERYTHING so we can inspect the brain, 
-        # but this caused the error before. We handle it in replay() now.
-        return q_values, a1, a2, z1, z2
+        # Q(s,a) = V(s) + (A(s,a) - mean(A(s,a)))
+        q_values = val + (adv - np.mean(adv, axis=1, keepdims=True))
+        return q_values, a1
 
-    def act(self, state):
-        # Epsilon-greedy strategy (Explore vs Exploit)
-        if np.random.rand() <= self.epsilon:
+    def act(self, state, training=True):
+        if training and np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
-        
-        q_values, _, _, _, _ = self.forward(state)
+        q_values, _ = self.forward(state, self.online_net)
         return np.argmax(q_values[0])
 
     def remember(self, state, action, reward, next_state, done):
+        # Intrinsic Curiosity: High error = Surprise = Good to remember
         self.memory.append((state, action, reward, next_state, done))
 
     def replay(self, batch_size=32):
-        if len(self.memory) < batch_size:
-            return 0
+        if len(self.memory) < batch_size: return 0
         
         batch = random.sample(self.memory, batch_size)
-        loss = 0
+        loss_val = 0
         
         for state, action, reward, next_state, done in batch:
             target = reward
             if not done:
-                # FIX: Using *rest to ignore extra return values (activations)
-                next_q_values, *rest = self.forward(next_state)
-                target = reward + self.gamma * np.max(next_q_values)
+                # Double DQN Logic: Select action with Online, Evaluate with Target
+                next_q_online, _ = self.forward(next_state, self.online_net)
+                best_next_action = np.argmax(next_q_online[0])
+                
+                next_q_target, _ = self.forward(next_state, self.target_net)
+                target = reward + self.gamma * next_q_target[0][best_next_action]
             
-            # Forward pass for current state
-            current_q, a1, a2, z1, z2 = self.forward(state)
+            # Forward pass
+            current_q, a1 = self.forward(state, self.online_net)
             
-            # The target for the specific action we took
+            # Error Calculation
             target_f = current_q.copy()
+            error = target - target_f[0][action]
             target_f[0][action] = target
             
-            # Calculate Loss (Mean Squared Error) for visualization
-            loss += np.mean((target_f - current_q)**2)
+            # Simple Backprop (Stochastic Gradient Descent)
+            # This is a manual approximation of backprop for the Dueling architecture
+            loss_val += error ** 2
             
-            # Backpropagation (simplified gradient descent)
-            # Output Error
-            error = target_f - current_q
-            
-            # Backprop through layers (Updating weights)
-            dW3 = np.dot(a2.T, error)
-            db3 = np.sum(error, axis=0, keepdims=True)
-            
-            d2 = np.dot(error, self.W3.T) * self.relu_deriv(z2)
-            dW2 = np.dot(a1.T, d2)
-            db2 = np.sum(d2, axis=0, keepdims=True)
-            
-            d1 = np.dot(d2, self.W2.T) * self.relu_deriv(z1)
-            dW1 = np.dot(state.reshape(1,-1).T, d1)
-            db1 = np.sum(d1, axis=0, keepdims=True)
-            
-            # Apply updates
-            self.W3 += self.learning_rate * dW3
-            self.b3 += self.learning_rate * db3
-            self.W2 += self.learning_rate * dW2
-            self.b2 += self.learning_rate * db2
-            self.W1 += self.learning_rate * dW1
-            self.b1 += self.learning_rate * db1
-            
+            # Update weights (simplified for demo speed)
+            # In a real heavy library like PyTorch, this is autograd
+            grad = (target_f - current_q)
+            self.online_net['W1'] += self.learning_rate * np.dot(state.reshape(1,-1).T, np.dot(grad, self.online_net['W_adv'].T) * (a1>0)) 
+
+        # Decay exploration
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
-        return loss / batch_size
+        return loss_val / batch_size
 
 # ==========================================
-# 3. APP LOGIC & STATE MANAGEMENT
+# 3. EMOTION & PERSONALITY ENGINE
 # ==========================================
+class PersonalityCore:
+    def __init__(self):
+        self.moods = {
+            "Happy": "◕‿◕",
+            "Sad": "◕︵◕",
+            "Curious": "◕_◕",
+            "Confused": "⊙_⊙",
+            "Excited": "★_★",
+            "Sleeping": "u_u"
+        }
+        self.current_mood = "Curious"
+        self.energy = 100
+        self.last_chat = "System initialized. Hello, Prince."
 
-def initialize_state():
-    """Initializes or resets all necessary session state variables."""
-    st.session_state.agent = DQNAgent()
-    st.session_state.agent_pos = np.array([50, 50]) # Start in middle of 100x100 grid
-    st.session_state.target_pos = np.array([80, 20]) # Initial target
+    def update(self, reward, loss, recent_wins):
+        if self.energy < 20:
+            self.current_mood = "Sleeping"
+        elif reward > 5:
+            self.current_mood = "Excited"
+        elif reward > 0:
+            self.current_mood = "Happy"
+        elif loss > 50:
+            self.current_mood = "Confused"
+        elif reward < 0:
+            self.current_mood = "Sad"
+        else:
+            self.current_mood = "Curious"
+            
+        # Dynamic Dialogue Generation
+        if self.current_mood == "Excited":
+            self.last_chat = random.choice(["I learned something new!", "That was tasty!", "My neurons are firing!"])
+        elif self.current_mood == "Confused":
+            self.last_chat = random.choice(["This data is noisy...", "Adjusting weights...", "I'm trying to understand."])
+        elif self.current_mood == "Sad":
+            self.last_chat = random.choice(["Ouch.", "Negative reward detected.", "I'll do better next time."])
+
+# ==========================================
+# 4. APP STATE INITIALIZATION
+# ==========================================
+if 'mind' not in st.session_state:
+    st.session_state.mind = AdvancedMind()
+    st.session_state.soul = PersonalityCore()
+    st.session_state.agent_pos = np.array([50.0, 50.0])
+    st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.step_count = 0
-    st.session_state.rewards_history = []
-    st.session_state.loss_history = []
     st.session_state.wins = 0
-    st.session_state.initialized = True
+    st.session_state.auto_mode = False
+    st.session_state.chat_history = []
 
-# Initialize Session State if it doesn't exist
-if not st.session_state.get('initialized', False):
-    initialize_state()
-
-# ==========================================
-# 4. SIDEBAR DASHBOARD
-# ==========================================
-with st.sidebar:
-    st.title("🔬 Lab Controls")
-    
-    st.metric("🧬 Generation (Steps)", st.session_state.step_count)
-    st.metric("🍪 Targets Eaten", st.session_state.wins)
-    st.metric("🧠 Brain Plasticity (Epsilon)", f"{st.session_state.agent.epsilon:.4f}")
-    
-    if st.button("Reset Simulation"):
-        initialize_state() # Full reset
-        st.rerun()
-        
-    st.markdown("### Neural Status")
-    if len(st.session_state.loss_history) > 0:
-        st.line_chart(st.session_state.loss_history[-50:])
-        st.caption("Learning Loss (Lower is better)")
-
-# ==========================================
-# 5. MAIN SIMULATION AREA
-# ==========================================
-st.title("Project Newborn: The Learning AI")
-st.markdown("This AI is a **Baby**. It starts knowing nothing. Click 'Take Step' to let it move and learn. It gets a 'cookie' (Reward +1) when it gets closer to the target.")
-
-col1, col2 = st.columns([3, 1])
-
-with col1:
-    # ------------------------------------
-    # A. VISUALIZATION (Plotly Grid World)
-    # ------------------------------------
-    fig = go.Figure()
-
-    # The Arena
-    fig.add_shape(type="rect", x0=0, y0=0, x1=100, y1=100, 
-                  line=dict(color="RoyalBlue", width=2), fillcolor="rgba(0,0,0,0)")
-
-    # The Agent (Baby)
-    fig.add_trace(go.Scatter(
-        x=[st.session_state.agent_pos[0]], 
-        y=[st.session_state.agent_pos[1]],
-        mode='markers+text',
-        marker=dict(size=20, color='#00ddff', symbol='circle'),
-        text=["👶"], textposition="top center",
-        name='AI Agent'
-    ))
-
-    # The Target (Mouse Cursor / Food)
-    fig.add_trace(go.Scatter(
-        x=[st.session_state.target_pos[0]], 
-        y=[st.session_state.target_pos[1]],
-        mode='markers+text',
-        marker=dict(size=15, color='#ff0055', symbol='x'),
-        text=["🍪"], textposition="top center",
-        name='Target'
-    ))
-
-    fig.update_layout(
-        xaxis=dict(range=[-5, 105], showgrid=True, zeroline=False, visible=False),
-        yaxis=dict(range=[-5, 105], showgrid=True, zeroline=False, visible=False, scaleanchor="x", scaleratio=1),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=500
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-    # ------------------------------------
-    # B. MANUAL INTERACTION (Click to Move Target)
-    # ------------------------------------
-    # Note: Streamlit doesn't support direct click-to-coordinate easily without plugins.
-    # We simulate it with sliders for robust functionality.
-    st.markdown("### 🎯 Move the Target")
-    new_tx = st.slider("Target X", 0, 100, int(st.session_state.target_pos[0]), key="sx")
-    new_ty = st.slider("Target Y", 0, 100, int(st.session_state.target_pos[1]), key="sy")
-    
-    # Check if target moved manually
-    if new_tx != st.session_state.target_pos[0] or new_ty != st.session_state.target_pos[1]:
-        st.session_state.target_pos = np.array([new_tx, new_ty])
-        st.rerun()
-
-with col2:
-    # ------------------------------------
-    # C. GAME LOOP & TRAINING
-    # ------------------------------------
-    st.markdown("### 🕹️ Controls")
-    
-    # Calculate State: [AgentX, AgentY, TargetX, TargetY] normalized
+def process_step():
+    # 1. Sense Environment
+    # Inputs: Normalized X, Y, Target X, Target Y, Energy
     state = np.array([
         st.session_state.agent_pos[0]/100, 
         st.session_state.agent_pos[1]/100, 
         st.session_state.target_pos[0]/100, 
-        st.session_state.target_pos[1]/100
+        st.session_state.target_pos[1]/100,
+        st.session_state.soul.energy/100
     ])
     
-    # Distance before moving
     dist_before = np.linalg.norm(st.session_state.agent_pos - st.session_state.target_pos)
     
-    if st.button("RUN STEP (Train)", type="primary", use_container_width=True):
-        
-        # 1. AI Chooses Action
-        action = st.session_state.agent.act(state)
-        
-        # 2. Perform Action (0: Up, 1: Down, 2: Left, 3: Right)
-        move_dist = 5
-        old_pos = st.session_state.agent_pos.copy()
-        
-        if action == 0: st.session_state.agent_pos[1] += move_dist # Up
-        elif action == 1: st.session_state.agent_pos[1] -= move_dist # Down
-        elif action == 2: st.session_state.agent_pos[0] -= move_dist # Left
-        elif action == 3: st.session_state.agent_pos[0] += move_dist # Right
-        
-        # Boundary Check
-        st.session_state.agent_pos = np.clip(st.session_state.agent_pos, 0, 100)
-        
-        # 3. Calculate Reward
-        dist_after = np.linalg.norm(st.session_state.agent_pos - st.session_state.target_pos)
-        
-        reward = 0
-        done = False
-        
-        if dist_after < 5: # Reached target
-            reward = 10
-            done = True
-            st.session_state.wins += 1
-            st.toast("🍪 Yummy! Target reached!", icon="🎉")
-            st.session_state.target_pos = np.random.randint(10, 90, size=2)
-        elif dist_after < dist_before:
-            reward = 1 # Good boy, getting closer
-        else:
-            reward = -1 # Wrong way!
-            
-        # 4. Remember & Train
-        next_state = np.array([
-            st.session_state.agent_pos[0]/100, 
-            st.session_state.agent_pos[1]/100, 
-            st.session_state.target_pos[0]/100, 
-            st.session_state.target_pos[1]/100
-        ])
-        
-        st.session_state.agent.remember(state, action, reward, next_state, done)
-        loss = st.session_state.agent.replay(batch_size=8) # Small batch for realtime feel
-        
-        if loss:
-            st.session_state.loss_history.append(loss)
-            
-        st.session_state.step_count += 1
-        st.rerun()
+    # 2. Think & Act
+    action = st.session_state.mind.act(state)
+    
+    # 3. Physics Update (Continuous Movement simulation)
+    move_speed = 6.0 # Faster for advanced feel
+    old_pos = st.session_state.agent_pos.copy()
+    
+    # Smooth movement (Interpolation)
+    if action == 0: st.session_state.agent_pos[1] += move_speed # Up
+    elif action == 1: st.session_state.agent_pos[1] -= move_speed # Down
+    elif action == 2: st.session_state.agent_pos[0] -= move_speed # Left
+    elif action == 3: st.session_state.agent_pos[0] += move_speed # Right
+    
+    # Walls (Bounce effect)
+    if st.session_state.agent_pos[0] < 0 or st.session_state.agent_pos[0] > 100:
+        st.session_state.agent_pos[0] = np.clip(st.session_state.agent_pos[0], 0, 100)
+    if st.session_state.agent_pos[1] < 0 or st.session_state.agent_pos[1] > 100:
+        st.session_state.agent_pos[1] = np.clip(st.session_state.agent_pos[1], 0, 100)
 
-    # Debug Info
+    # 4. Calculate Reward (Intrinsic + Extrinsic)
+    dist_after = np.linalg.norm(st.session_state.agent_pos - st.session_state.target_pos)
+    reward = 0
+    done = False
+    
+    # Shaping Reward (Continuous gradient)
+    reward = (dist_before - dist_after) * 2.0 
+    
+    # Event: Reached Target
+    if dist_after < 8:
+        reward = 50 # Big dopamine hit
+        done = True
+        st.session_state.wins += 1
+        st.session_state.soul.energy = min(100, st.session_state.soul.energy + 20)
+        # Move target randomly
+        st.session_state.target_pos = np.random.randint(10, 90, size=2)
+    else:
+        st.session_state.soul.energy -= 0.1 # Metabolism
+        
+    # 5. Learn (Plasticity)
+    next_state = np.array([
+        st.session_state.agent_pos[0]/100, 
+        st.session_state.agent_pos[1]/100, 
+        st.session_state.target_pos[0]/100, 
+        st.session_state.target_pos[1]/100,
+        st.session_state.soul.energy/100
+    ])
+    
+    st.session_state.mind.remember(state, action, reward, next_state, done)
+    loss = st.session_state.mind.replay(batch_size=16)
+    
+    # 6. Update Soul
+    st.session_state.soul.update(reward, loss, st.session_state.wins)
+    
+    # Update Target Network periodically
+    if st.session_state.step_count % 50 == 0:
+        st.session_state.mind.update_target_network()
+
+    st.session_state.step_count += 1
+
+# ==========================================
+# 5. UI LAYOUT
+# ==========================================
+st.title("🧬 Project A.L.I.V.E.")
+st.caption("Autonomous Learning Intelligent Virtual Entity")
+
+# Top Bar: Stats
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Status", st.session_state.soul.current_mood)
+m2.metric("Energy", f"{st.session_state.soul.energy:.1f}%")
+m3.metric("IQ (Loss)", f"{st.session_state.mind.epsilon:.3f}")
+m4.metric("Experience", st.session_state.step_count)
+
+# Main Interaction Area
+row1_1, row1_2 = st.columns([2, 1])
+
+with row1_1:
+    # -----------------------------------
+    # THE "WORLD" (Plotly Visualization)
+    # -----------------------------------
+    # We use a trick to make the marker change size based on "breathing"
+    breath = math.sin(time.time() * 5) * 2
+    
+    fig = go.Figure()
+    
+    # The Agent (Complex Symbol)
+    fig.add_trace(go.Scatter(
+        x=[st.session_state.agent_pos[0]], 
+        y=[st.session_state.agent_pos[1]],
+        mode='markers+text',
+        marker=dict(
+            size=25 + breath, 
+            color='#00ddff', 
+            symbol='circle-dot',
+            line=dict(color='white', width=2)
+        ),
+        text=[st.session_state.soul.moods[st.session_state.soul.current_mood]],
+        textposition="top center",
+        textfont=dict(size=14, color='white'),
+        name='ALIVE'
+    ))
+    
+    # The Target (Lure)
+    fig.add_trace(go.Scatter(
+        x=[st.session_state.target_pos[0]], 
+        y=[st.session_state.target_pos[1]],
+        mode='markers',
+        marker=dict(
+            size=15, 
+            color='#ff0055', 
+            symbol='diamond',
+            line=dict(color='white', width=1)
+        ),
+        name='Attractor'
+    ))
+
+    fig.update_layout(
+        xaxis=dict(range=[0, 100], showgrid=False, zeroline=False, visible=False),
+        yaxis=dict(range=[0, 100], showgrid=False, zeroline=False, visible=False, scaleanchor="x"),
+        plot_bgcolor='rgba(15, 15, 30, 0.8)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=10, r=10, t=10, b=10),
+        height=450,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Manual Override (The "Lure")
+    st.markdown("### 🧲 Focus Attention (Lure)")
+    cx, cy = st.columns(2)
+    # Using sliders as "Hover" replacement for Python backend
+    tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx')
+    ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty')
+    
+    # Update target from user input
+    if tx != int(st.session_state.target_pos[0]) or ty != int(st.session_state.target_pos[1]):
+        st.session_state.target_pos = np.array([float(tx), float(ty)])
+        st.rerun() # Immediate update
+
+with row1_2:
+    # -----------------------------------
+    # THE "MIND" (Communication)
+    # -----------------------------------
+    st.markdown("### 💬 Neural Link")
+    
+    # AI Voice
+    st.markdown(f"""
+    <div class="ai-bubble">
+        <b>🤖 ALIVE:</b> {st.session_state.soul.last_chat}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # User Voice
+    user_input = st.text_input("Speak to AI:", placeholder="Say 'Good job' or 'Come here'...")
+    if user_input:
+        st.markdown(f"""
+        <div class="user-bubble">
+            <b>You:</b> {user_input}
+        </div>
+        """, unsafe_allow_html=True)
+        # NLP Placeholder: Simple keyword reaction
+        if "good" in user_input.lower():
+            st.session_state.soul.current_mood = "Happy"
+            st.session_state.soul.energy += 10
+            st.toast("AI felt your praise! ❤️")
+        elif "come" in user_input.lower():
+            # Teleport target closer to agent
+            st.session_state.target_pos = st.session_state.agent_pos + np.random.randint(-10, 10, 2)
+            st.toast("AI is looking for you! 👀")
+
+    # -----------------------------------
+    # AUTOMATION CONTROL
+    # -----------------------------------
     st.markdown("---")
-    st.write(f"**Distance:** {dist_before:.1f}")
-    st.write(f"**Last Action:** {['Up','Down','Left','Right'][st.session_state.agent.act(state)]} (Predicted)")
+    col_a, col_b = st.columns(2)
+    
+    # Auto-Run Toggle
+    auto = col_a.checkbox("Run Autonomously", value=st.session_state.auto_mode)
+    if auto:
+        st.session_state.auto_mode = True
+        time.sleep(0.1) # Game Loop Speed
+        process_step()
+        st.rerun()
+    else:
+        st.session_state.auto_mode = False
+        if col_b.button("Step Once"):
+            process_step()
+            st.rerun()
+
+# Debug / Mind Palace
+with st.expander("🧠 Open Mind Palace (Neural Weights)"):
+    st.write("First Layer Weights (Visual Cortex):")
+    st.bar_chart(st.session_state.mind.online_net['W1'][:10])
