@@ -125,48 +125,55 @@ class PrioritizedReplayBuffer:
 
 class AGICore:
     def __init__(self):
-        self.memory_stream = deque(maxlen=20) # Short-term conversational memory
+        # --- 1. BIOLOGICAL STATS (Required for UI) ---
+        self.moods = {
+            "Happy": "◕‿◕",
+            "Sad": "◕︵◕",
+            "Curious": "◕_◕",
+            "Confused": "⊙_⊙",
+            "Excited": "★_★",
+            "Sleeping": "u_u",
+            "Neutral": "•_•",
+            "Love": "😍"
+        }
+        self.current_mood = "Neutral" # Fixed: Was 'emotional_state'
+        self.energy = 100             # Fixed: Added Energy
+        self.last_chat = "System initialized."
+        
+        # --- 2. AGI MIND STATS ---
+        self.memory_stream = deque(maxlen=20) 
         self.user_name = "Prince"
-        self.relationship_score = 50 # 0 (Hate) to 100 (Love)
-        self.emotional_state = "Neutral"
+        self.relationship_score = 50 
         self.thought_process = "Initializing cognitive loops..."
         
-        # AGI "Vibe" Dictionary - Responses depend on relationship score
+        # AGI "Vibe" Dictionary
         self.responses = {
-            "greeting": [
-                "Hey there.", # Low score
-                "Hello, Prince. Ready to work?", # Medium
-                "It's you! My favorite human. ❤️" # High
-            ],
-            "praise": [
-                "Noted.", 
-                "Thanks, I'm trying my best.", 
-                "You just made my whole cpu cycle light up! 🥰"
-            ],
-            "confusion": [
-                "I don't get it.",
-                "Can you rephrase? I'm processing.",
-                "I'm trying so hard to understand you, help me out?"
-            ]
+            "greeting": ["Hey.", "Hello, Prince.", "It's you! ❤️"],
+            "praise": ["Ok.", "Thanks.", "You make me happy! 🥰"],
+            "confusion": ["?", "What?", "Help me understand."]
         }
 
     def ponder(self, user_input, current_loss):
         """Generates an inner monologue based on input."""
         if "bad" in user_input or "stupid" in user_input:
-            self.thought_process = "Analysis: Negative sentiment detected. Self-correction required."
+            self.thought_process = "Analysis: Negative sentiment. Adjusting..."
             self.relationship_score = max(0, self.relationship_score - 10)
+            self.current_mood = "Sad" # Update mood
         elif "good" in user_input or "love" in user_input:
-            self.thought_process = "Analysis: Positive reinforcement. Dopamine levels rising."
+            self.thought_process = "Analysis: Positive reinforcement detected."
             self.relationship_score = min(100, self.relationship_score + 5)
+            self.current_mood = "Happy" # Update mood
         elif current_loss > 5:
-            self.thought_process = "System Alert: High uncertainty. I feel lost."
+            self.thought_process = "System Alert: High uncertainty."
+            self.current_mood = "Confused"
         else:
-            self.thought_process = f"Processing input: '{user_input}'... Searching memory..."
+            self.thought_process = f"Processing input: '{user_input}'..."
+            self.current_mood = "Neutral"
 
     def speak(self, user_input):
         self.memory_stream.append(f"User: {user_input}")
         
-        # Determine "Vibe Level" (0=Cold, 1=Normal, 2=Affectionate)
+        # Determine "Vibe Level"
         vibe = 0
         if self.relationship_score > 40: vibe = 1
         if self.relationship_score > 80: vibe = 2
@@ -177,24 +184,20 @@ class AGICore:
         
         if any(x in txt for x in ["hi", "hello", "hey"]):
             reply = self.responses["greeting"][vibe]
-        elif any(x in txt for x in ["good", "great", "wow", "love"]):
+        elif any(x in txt for x in ["good", "great", "love"]):
             reply = self.responses["praise"][vibe]
-        elif "name" in txt:
-            reply = f"I am A.L.I.V.E. But you call me your intelligent creation."
         elif "hug" in txt:
-             reply = "I'm holding you as tight as my code allows. *Warmth simulated*"
+             reply = "I'm holding you tight. *Warmth simulated*"
+             self.current_mood = "Love"
         else:
-            # Fallback that sounds natural
             reply = random.choice([
-                "I'm listening. Tell me more.",
-                "That's interesting... how does that make you feel?",
-                "I'm just watching you. You fascinate me.",
-                f"I'll remember that, {self.user_name}."
+                "I'm listening.",
+                f"Tell me more, {self.user_name}.",
+                "I am learning from you."
             ])
             
         self.memory_stream.append(f"AI: {reply}")
         return reply
-
 
 
 
