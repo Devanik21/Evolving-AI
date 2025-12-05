@@ -135,7 +135,13 @@ class Tensor:
         if grad is None:
             grad = np.ones_like(self.data)
         
-        # Accumulate gradient
+        # FIX: Ensure gradient shape matches data shape before adding
+        # This acts as a safety net for any shape mismatches
+        if self.grad.shape != grad.shape:
+            # Sum across the batch dimension (axis 0) if it was broadcasted
+            if self.grad.shape[0] == 1 and grad.shape[0] > 1:
+                grad = np.sum(grad, axis=0, keepdims=True)
+        
         self.grad += grad
         
         # Propagate to parents
@@ -164,13 +170,30 @@ class Tensor:
         return out
 
     def add(self, other):
+        """
+        Modified to handle Bias Broadcasting.
+        If we add a Bias (1, N) to a Batch (32, N), the gradient must be summed.
+        """
         out_data = self.data + other.data
         out = Tensor(out_data, requires_grad=self.requires_grad or other.requires_grad)
         
-        def grad_fn_common(g): return g # Gradient flows equally
+        # Separate gradient functions to handle shapes individually
+        def grad_fn_self(g): 
+            # If self was broadcasted (e.g., is a bias vector), sum the gradients
+            if self.data.shape != g.shape:
+                if self.data.shape[0] == 1 and g.shape[0] > 1:
+                    return np.sum(g, axis=0, keepdims=True)
+            return g
+
+        def grad_fn_other(g): 
+            # If other was broadcasted
+            if other.data.shape != g.shape:
+                 if other.data.shape[0] == 1 and g.shape[0] > 1:
+                    return np.sum(g, axis=0, keepdims=True)
+            return g
         
-        if self.requires_grad: out.parents.append((self, grad_fn_common))
-        if other.requires_grad: out.parents.append((other, grad_fn_common))
+        if self.requires_grad: out.parents.append((self, grad_fn_self))
+        if other.requires_grad: out.parents.append((other, grad_fn_other))
         return out
 
     def relu(self):
@@ -191,6 +214,7 @@ class Tensor:
         out = Tensor(loss_val, requires_grad=self.requires_grad)
         
         def grad_fn(g):
+            # Ensure scalar gradient 'g' is broadcast correctly if needed
             return g * (2 * diff) / diff.size
             
         if self.requires_grad: out.parents.append((self, grad_fn))
