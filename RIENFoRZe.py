@@ -76,7 +76,7 @@ class DQNAgent:
     def act(self, state):
         if np.random.rand() <= self.epsilon:
             return np.random.randint(self.action_size)
-        q_values, _, _ = self.forward(state)
+        q_values, _, _ = self.forward(state) # Correctly unpack the tuple
         return np.argmax(q_values)
     
     def remember(self, state, action, reward, next_state, done):
