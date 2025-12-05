@@ -21,7 +21,7 @@ st.markdown("""
 <style>
     /* Global Theme - Soft, Modern */
     .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background-color: #3C2A21; /* Dark Coffee */
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     
