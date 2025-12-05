@@ -690,74 +690,78 @@ with col_sim:
 
     # 2. Build the HTML String (The "Matrix")
     # We wrap everything in a PARENT div with 'position: relative' so the absolute items stay inside it.
+
+    
+    # 2. Build the HTML String (The "Matrix")
+    # FIX: We remove indentation inside the string so Markdown reads it as HTML, not code.
     html_grid = f"""
+<div style="
+    position: relative;
+    width: 100%;
+    height: 400px;
+    background-color: #0f0f1e;
+    border: 2px solid #00d2ff;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    background-image: 
+        linear-gradient(rgba(0, 210, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 210, 255, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+">
     <div style="
-        position: relative;
-        width: 100%;
-        height: 400px;
-        background-color: #0f0f1e;
+        position: absolute;
+        left: {ax}%;
+        top: {ay}%;
+        width: 40px;
+        height: 40px;
+        background: rgba(0, 210, 255, 0.2);
         border: 2px solid #00d2ff;
-        border-radius: 10px;
-        overflow: hidden;
-        margin-bottom: 20px;
-        background-image: 
-            linear-gradient(rgba(0, 210, 255, 0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 210, 255, 0.1) 1px, transparent 1px);
-        background-size: 20px 20px;
-    ">
-        <div style="
-            position: absolute;
-            left: {ax}%;
-            top: {ay}%;
-            width: 40px;
-            height: 40px;
-            background: rgba(0, 210, 255, 0.2);
-            border: 2px solid #00d2ff;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 20px #00d2ff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            z-index: 10;
-            transition: all 0.2s ease-out;
-        ">{mood_icon}</div>
-        
-        <div style="
-            position: absolute;
-            left: {tx}%;
-            top: {ty}%;
-            width: 25px;
-            height: 25px;
-            background: #ff0055;
-            transform: translate(-50%, -50%) rotate(45deg);
-            box-shadow: 0 0 15px #ff0055;
-            z-index: 5;
-            animation: targetPulse 1s infinite;
-        "></div>
-        
-        <div style="
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.05) 50%);
-            background-size: 100% 4px;
-            pointer-events: none;
-            z-index: 20;
-        "></div>
-        
-        <style>
-            @keyframes targetPulse {{
-                0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
-                50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.3); opacity: 0.8; }}
-                100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
-            }}
-        </style>
-    </div>
-    """
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 20px #00d2ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        z-index: 10;
+        transition: all 0.2s ease-out;
+    ">{mood_icon}</div>
+    
+    <div style="
+        position: absolute;
+        left: {tx}%;
+        top: {ty}%;
+        width: 25px;
+        height: 25px;
+        background: #ff0055;
+        transform: translate(-50%, -50%) rotate(45deg);
+        box-shadow: 0 0 15px #ff0055;
+        z-index: 5;
+        animation: targetPulse 1s infinite;
+    "></div>
+    
+    <div style="
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.05) 50%);
+        background-size: 100% 4px;
+        pointer-events: none;
+        z-index: 20;
+    "></div>
+    
+    <style>
+        @keyframes targetPulse {{
+            0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
+            50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.3); opacity: 0.8; }}
+            100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }}
+        }}
+    </style>
+</div>
+"""
     
     # 3. RENDER IT (This is the critical line!)
     st.markdown(html_grid, unsafe_allow_html=True)
