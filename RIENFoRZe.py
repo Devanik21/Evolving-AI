@@ -317,7 +317,7 @@ def reset_simulation():
     """Clears the session state to reset the simulation."""
     keys_to_clear = [
         'mind', 'soul', 'agent_pos', 'target_pos', 
-        'step_count', 'wins', 'auto_mode', 'chat_history'
+        'step_count', 'wins', 'auto_mode', 'chat_history','is_hugging' # <--- ADD THIS
     ]
     for key in keys_to_clear:
         if key in st.session_state:
@@ -392,13 +392,20 @@ def process_step():
     reward = (dist_before - dist_after) * 2.0 
     
     # Event: Reached Target
+    # Event: Reached Target
     if dist_after < 8:
-        reward = 50 # Big dopamine hit
-        done = True
+        # --- NEW HUGGING LOGIC ---
+        st.session_state.is_hugging = True 
+        st.session_state.auto_mode = False # Stop the loop!
+        
         st.session_state.wins += 1
-        st.session_state.soul.energy = min(100, st.session_state.soul.energy + 20)
-        # Move target randomly
-        st.session_state.target_pos = np.random.randint(10, 90, size=2)
+        st.session_state.soul.energy = 100
+        st.session_state.soul.current_mood = "Love" # New secret mood
+        st.session_state.soul.last_chat = "I found you, Prince! *Hugs tightly* I missed you."
+        
+        reward = 100 # Massive reward for the hug
+        done = True
+        # We DO NOT move the target here anymore. We stay here.
     else:
         st.session_state.soul.energy -= 0.1 # Metabolism
         
@@ -458,15 +465,30 @@ with row1_1:
 
     # Place agent and target
     # Ensure they don't overwrite each other for clarity
-    if (agent_y, agent_x) == (target_y, target_x):
+    # Place agent and target
+    if st.session_state.get('is_hugging', False):
+        # If hugging, show the hug emoji at the collision point
+        grid[agent_y][agent_x] = '🫂' 
+    elif (agent_y, agent_x) == (target_y, target_x):
         grid[agent_y][agent_x] = '💥'
     else:
-        grid[agent_y][agent_x] = st.session_state.soul.moods[st.session_state.soul.current_mood]
+        # Check if mood exists in dict, otherwise default to Happy
+        mood_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
+        grid[agent_y][agent_x] = mood_icon
         grid[target_y][target_x] = '💎'
 
     # Convert grid to a single string and display
     grid_str = "\n".join(" ".join(row) for row in grid)
     st.code(grid_str, language=None)
+
+
+    # If hugging, offer a button to continue
+    if st.session_state.get('is_hugging', False):
+        st.success("Target Acquired! Protocol: HUG initiated.")
+        if st.button("🥰 Release Hug & Continue"):
+            st.session_state.is_hugging = False
+            st.session_state.target_pos = np.random.randint(10, 90, size=2) # NOW we move the target
+            st.rerun()
     
     # Manual Override (The "Lure")
     st.markdown("### 🧲 Focus Attention (Lure)")
