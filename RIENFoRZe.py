@@ -77,19 +77,66 @@ st.markdown("""
 # ==========================================
 # 2. THE ADVANCED MIND (Double Dueling DQN)
 # ==========================================
+class PrioritizedReplayBuffer:
+    """A more advanced memory that prioritizes 'surprising' experiences."""
+    def __init__(self, capacity, prob_alpha=0.6):
+        self.prob_alpha = prob_alpha
+        self.capacity = capacity
+        self.buffer = []
+        self.pos = 0
+        self.priorities = np.zeros((capacity,), dtype=np.float32)
+
+    def add(self, state, action, reward, next_state, done):
+        max_prio = self.priorities.max() if self.buffer else 1.0
+        
+        if len(self.buffer) < self.capacity:
+            self.buffer.append((state, action, reward, next_state, done))
+        else:
+            self.buffer[self.pos] = (state, action, reward, next_state, done)
+        
+        self.priorities[self.pos] = max_prio
+        self.pos = (self.pos + 1) % self.capacity
+
+    def sample(self, batch_size, beta=0.4):
+        if len(self.buffer) == self.capacity:
+            prios = self.priorities
+        else:
+            prios = self.priorities[:self.pos]
+        
+        probs = prios ** self.prob_alpha
+        probs /= probs.sum()
+        
+        indices = np.random.choice(len(self.buffer), batch_size, p=probs)
+        samples = [self.buffer[idx] for idx in indices]
+        
+        total = len(self.buffer)
+        weights = (total * probs[indices]) ** (-beta)
+        weights /= weights.max()
+        
+        return samples, indices, np.array(weights, dtype=np.float32)
+
+    def update_priorities(self, batch_indices, batch_priorities):
+        for idx, prio in zip(batch_indices, batch_priorities):
+            self.priorities[idx] = prio + 1e-5 # Add small epsilon to avoid zero priority
+
+    def __len__(self):
+        return len(self.buffer)
+
 class AdvancedMind:
-    def __init__(self, state_size=5, action_size=4):
+    def __init__(self, state_size=5, action_size=4, buffer_size=10000):
         # State: [AgentX, AgentY, TargetX, TargetY, Energy]
         self.state_size = state_size
         self.action_size = action_size
-        self.memory = deque(maxlen=5000)
+        self.memory = PrioritizedReplayBuffer(buffer_size) # UPGRADED MEMORY
         
         # Hyperparameters (Adaptive)
         self.gamma = 0.95    
         self.epsilon = 1.0   
         self.epsilon_min = 0.05
         self.epsilon_decay = 0.99
-        self.learning_rate = 0.005
+        self.learning_rate = 0.0025 # Adjusted for more stable learning
+        self.beta = 0.4 # Importance sampling exponent
+        self.beta_increment = 0.001
         
         # Dual Networks (Online + Target for stability)
         self.online_net = self.init_network()
@@ -137,15 +184,18 @@ class AdvancedMind:
         return np.argmax(q_values[0])
 
     def remember(self, state, action, reward, next_state, done):
-        # Intrinsic Curiosity: High error = Surprise = Good to remember
-        self.memory.append((state, action, reward, next_state, done))
+        # With PER, we just add the experience. Priority is updated after learning.
+        self.memory.add(state, action, reward, next_state, done)
 
     def replay(self, batch_size=32):
-        if len(self.memory) < batch_size: return 0
+        if len(self.memory) < batch_size: return 0, 0
         
-        batch = random.sample(self.memory, batch_size)
+        # Sample from the prioritized buffer
+        batch, indices, weights = self.memory.sample(batch_size, self.beta)
+        self.beta = min(1.0, self.beta + self.beta_increment) # Anneal beta
+        
         loss_val = 0
-        
+        new_priorities = []
         for state, action, reward, next_state, done in batch:
             target = reward
             if not done:
@@ -161,23 +211,29 @@ class AdvancedMind:
             
             # Error Calculation
             target_f = current_q.copy()
-            error = target - target_f[0][action]
+            td_error = target - target_f[0][action]
             target_f[0][action] = target
             
+            # Update priority for this experience
+            new_priorities.append(abs(td_error))
+            
             # Simple Backprop (Stochastic Gradient Descent)
-            # This is a manual approximation of backprop for the Dueling architecture
-            loss_val += error ** 2
+            # We apply the importance-sampling weight here to correct for the biased sampling
+            weighted_error = td_error * weights[i]
+            loss_val += weighted_error ** 2
             
             # Update weights (simplified for demo speed)
-            # In a real heavy library like PyTorch, this is autograd
-            grad = (target_f - current_q)
+            # The gradient is now scaled by the importance weight
+            grad = (target_f - current_q) * weights[i]
             self.online_net['W1'] += self.learning_rate * np.dot(state.reshape(1,-1).T, np.dot(grad, self.online_net['W_adv'].T) * (a1>0)) 
 
+        self.memory.update_priorities(indices, new_priorities)
+        
         # Decay exploration
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
-        return loss_val / batch_size
+        return loss_val / batch_size, np.mean(new_priorities)
 
 # ==========================================
 # 3. EMOTION & PERSONALITY ENGINE
@@ -196,14 +252,14 @@ class PersonalityCore:
         self.energy = 100
         self.last_chat = "System initialized. Hello, Prince."
 
-    def update(self, reward, loss, recent_wins):
+    def update(self, reward, td_error, recent_wins):
         if self.energy < 20:
             self.current_mood = "Sleeping"
         elif reward > 5:
             self.current_mood = "Excited"
         elif reward > 0:
             self.current_mood = "Happy"
-        elif loss > 50:
+        elif td_error > 10: # High TD-Error means high confusion/surprise
             self.current_mood = "Confused"
         elif reward < 0:
             self.current_mood = "Sad"
@@ -213,7 +269,7 @@ class PersonalityCore:
         # Dynamic Dialogue Generation
         if self.current_mood == "Excited":
             self.last_chat = random.choice(["I learned something new!", "That was tasty!", "My neurons are firing!"])
-        elif self.current_mood == "Confused":
+        elif self.current_mood == "Confused" and td_error > 10:
             self.last_chat = random.choice(["This data is noisy...", "Adjusting weights...", "I'm trying to understand."])
         elif self.current_mood == "Sad":
             self.last_chat = random.choice(["Ouch.", "Negative reward detected.", "I'll do better next time."])
@@ -303,10 +359,10 @@ def process_step():
     ])
     
     st.session_state.mind.remember(state, action, reward, next_state, done)
-    loss = st.session_state.mind.replay(batch_size=16)
+    loss, td_error = st.session_state.mind.replay(batch_size=32) # Increased batch size
     
     # 6. Update Soul
-    st.session_state.soul.update(reward, loss, st.session_state.wins)
+    st.session_state.soul.update(reward, td_error, st.session_state.wins)
     
     # Update Target Network periodically
     if st.session_state.step_count % 50 == 0:
@@ -323,7 +379,7 @@ st.caption("Autonomous Learning Intelligent Virtual Entity")
 # Top Bar: Stats
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Status", st.session_state.soul.current_mood)
-m2.metric("Energy", f"{st.session_state.soul.energy:.1f}%")
+m2.metric("Energy", f"{st.session_state.soul.energy:.1f}%", f"{st.session_state.wins} Wins")
 m3.metric("IQ (Loss)", f"{st.session_state.mind.epsilon:.3f}")
 m4.metric("Experience", st.session_state.step_count)
 
