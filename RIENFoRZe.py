@@ -68,14 +68,15 @@ class DQNAgent:
         return np.maximum(0, x)
     
     def forward(self, state):
-        x = self.relu(np.dot(state, self.weights['layer1']) + self.weights['bias1'])
-        x = self.relu(np.dot(x, self.weights['layer2']) + self.weights['bias2'])
-        return np.dot(x, self.weights['layer3']) + self.weights['bias3']
+        layer1_output = self.relu(np.dot(state, self.weights['layer1']) + self.weights['bias1'])
+        layer2_output = self.relu(np.dot(layer1_output, self.weights['layer2']) + self.weights['bias2'])
+        q_values = np.dot(layer2_output, self.weights['layer3']) + self.weights['bias3']
+        return q_values, layer1_output, layer2_output
     
     def act(self, state):
         if np.random.rand() <= self.epsilon:
             return np.random.randint(self.action_size)
-        q_values = self.forward(state)
+        q_values, _, _ = self.forward(state)
         return np.argmax(q_values)
     
     def remember(self, state, action, reward, next_state, done):
@@ -92,20 +93,19 @@ class DQNAgent:
         for state, action, reward, next_state, done in batch:
             target = reward
             if not done:
-                next_q_values, _, _ = self.forward(next_state)
+                next_q_values, _, _ = self.forward(next_state) # Unpack the values
                 target += self.gamma * np.max(next_q_values)
             
-            q_values, layer1_output, layer2_output = self.forward(state)
+            q_values, layer1_output, layer2_output = self.forward(state) # Unpack the values
             target_f = q_values.copy()
             target_f[action] = target
             
             loss = np.mean((q_values - target_f) ** 2)
             total_loss += loss
             
-            # Simplified backpropagation
-            # Update layer 3
+            # Backpropagation for the output layer (layer3)
             grad = 2 * (q_values - target_f) * self.learning_rate
-            self.weights['layer3'] -= np.outer(layer2_output, grad)
+            self.weights['layer3'] -= np.outer(layer2_output, grad) # Use layer2_output here
             self.weights['bias3'] -= grad
         
         if self.epsilon > self.epsilon_min:
