@@ -428,6 +428,11 @@ if hasattr(st.session_state, 'soul'):
         st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
         time.sleep(0.5)
         st.rerun()
+
+# This check ensures the history lists exist even if the session state is from an older version.
+if 'loss_history' not in st.session_state:
+    st.session_state.loss_history = []
+    st.session_state.reward_history = []
     
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
@@ -730,10 +735,6 @@ with row1_2:
 # Performance Graph
 st.markdown("---")
 st.markdown("### 📈 Performance Metrics")
-
-# Ensure history lists exist before trying to access them
-if 'loss_history' not in st.session_state: st.session_state.loss_history = []
-if 'reward_history' not in st.session_state: st.session_state.reward_history = []
 
 if len(st.session_state.loss_history) > 1:
     # Create a DataFrame for charting
