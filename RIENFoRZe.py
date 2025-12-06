@@ -659,14 +659,20 @@ with st.sidebar:
     # ... inside st.sidebar ...
 
     # --- NEW: SAVE / LOAD SECTION ---
+    # --- NEW: SAVE / LOAD SECTION ---
     with st.expander("💾 Memory Card (Safe Mode)", expanded=True):
         
-        # 1. DOWNLOAD
-        if st.button("📦 Create Backup (.zip)"):
-            zip_data = save_brain()
+        # 1. PREPARE THE DOWNLOAD
+        if st.button("📦 Prepare Backup (.zip)"):
+            # Save the zip to the session state so it doesn't vanish!
+            st.session_state['backup_data'] = save_brain()
+            st.toast("✅ Brain Compressed & Ready!", icon="💾")
+        
+        # 2. SHOW BUTTON IF READY
+        if 'backup_data' in st.session_state:
             st.download_button(
-                label="⬇️ Download Brain",
-                data=zip_data,
+                label="⬇️ Click Here to Download",
+                data=st.session_state['backup_data'],
                 file_name=f"ALIVE_Gen_{st.session_state.step_count}.zip",
                 mime="application/zip"
             )
