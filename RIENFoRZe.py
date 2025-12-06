@@ -36,9 +36,19 @@ st.set_page_config(
 
 # [TEMP FIX] Put this at the very top, after imports & page_config
 # This forces the brain to rebuild itself with the new 7-dimension shape.
-if 'agent' in st.session_state and st.session_state.agent.state_dim != 7:
-    del st.session_state['agent']
-    st.rerun()
+# ==========================================
+# [AUTO-HEALING] BRAIN SIZE CHECK
+# ==========================================
+# If the saved agent expects 7 inputs but we now give it 9...
+# We must kill the old agent and let a new one be born.
+if 'agent' in st.session_state:
+    # Check if the existing brain is the old v13 (7 dims) or older
+    if st.session_state.agent.state_dim != 9:
+        del st.session_state['agent']
+        # Also reset stats so the new brain starts fresh
+        if 'pos' in st.session_state: del st.session_state['pos']
+        if 'loss_history' in st.session_state: del st.session_state['loss_history']
+        st.rerun()
 
 # Cyberpunk 2077 / Sci-Fi Lab Aesthetics
 st.markdown("""
@@ -420,7 +430,7 @@ class TDMPCAgent:
     def __init__(self):
         # CHANGED: Increased from 7 to 9.
         # We are adding Absolute X and Absolute Y back (Best of both worlds)
-        self.state_dim = 7  
+        self.state_dim = 9  
         self.action_dim = 4 
         self.latent_dim = 16
         self.horizon = 5 
