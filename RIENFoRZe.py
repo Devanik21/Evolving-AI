@@ -471,6 +471,11 @@ class PersonalityCore:
 # ==========================================
 
 # 1. Initialize Configuration FIRST (So the brain knows what to do)
+# ==========================================
+# 4. APP STATE INITIALIZATION (Auto-Repair Version)
+# ==========================================
+
+# 1. Initialize Configuration FIRST
 if 'config' not in st.session_state:
     st.session_state.config = {
         "sim_speed": 0.1, "move_speed": 8.0, "energy_decay": 0.1, "target_update_freq": 50,
@@ -482,8 +487,18 @@ if 'config' not in st.session_state:
         "grid_h": 15, "grid_w": 40, "graph_points": 500
     }
 
-# 2. Initialize Mind & Soul (Now safe to use config)
+# --- CRITICAL FIX: DETECT OLD BRAIN AND DELETE IT ---
+if 'mind' in st.session_state:
+    # If the brain in memory doesn't have an optimizer, it's the old version!
+    if not hasattr(st.session_state.mind, 'optimizer'):
+        st.toast("⚠️ Old Brain Detected. Performing Transplant...", icon="🏥")
+        del st.session_state['mind']
+        if 'soul' in st.session_state: del st.session_state['soul']
+        st.rerun() # Restart to apply changes
+
+# 2. Initialize Mind (Using TitanBrain)
 if 'mind' not in st.session_state:
+    # IMPORTANT: Make sure you are using TitanBrain here, not AdvancedMind
     st.session_state.mind = TitanBrain(
         buffer_size=st.session_state.config['buffer_size'], 
         hidden_size=st.session_state.config['hidden_size']
@@ -499,15 +514,7 @@ if 'mind' not in st.session_state:
     st.session_state.reward_history = []
     st.session_state.is_hugging = False
 
-# 3. Legacy Check (Hotfix for old versions)
-if hasattr(st.session_state, 'soul'):
-    if not hasattr(st.session_state.soul, 'update') or not hasattr(st.session_state.soul, 'current_mood'):
-        st.session_state.soul = AGICore() # FORCE REBOOT
-        st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
-        time.sleep(0.5)
-        st.rerun()
-
-# 4. Ensure History Lists Exist
+# 3. Ensure History Lists Exist
 if 'loss_history' not in st.session_state:
     st.session_state.loss_history = []
     st.session_state.reward_history = []
