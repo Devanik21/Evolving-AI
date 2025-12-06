@@ -594,12 +594,26 @@ def save_brain():
 def load_brain(uploaded_file):
     try:
         with zipfile.ZipFile(uploaded_file, "r") as z:
+            # 1. READ METADATA
             with z.open("metadata.json") as f:
                 meta = json.load(f)
-            st.session_state.config.update(meta['config'])
-            st.session_state.mind.epsilon = meta['epsilon']
             
-            # Load Weights
+            # --- CRITICAL FIX: Restore Stats & History ---
+            st.session_state.step_count = meta.get('steps', 0)
+            st.session_state.wins = meta.get('wins', 0)
+            st.session_state.loss_history = meta.get('loss_hist', [])
+            st.session_state.reward_history = meta.get('reward_hist', [])
+            
+            # Restore Config & Brain Params
+            st.session_state.config.update(meta.get('config', {}))
+            st.session_state.mind.epsilon = meta.get('epsilon', 1.0)
+            
+            # Restore Soul (Name & Relationship)
+            if 'soul' in meta:
+                st.session_state.soul.user_name = meta['soul'].get('name', 'Prince')
+                st.session_state.soul.relationship_score = meta['soul'].get('rel', 50)
+            
+            # 2. LOAD WEIGHTS
             def load_npz(filename):
                 with z.open(filename) as f:
                     return np.load(io.BytesIO(f.read()))
@@ -610,7 +624,9 @@ def load_brain(uploaded_file):
             raw_target = load_npz("target_net.npz")
             st.session_state.mind.target_net = {k: raw_target[k] for k in raw_target.files}
 
-        st.toast("✅ Simple Brain Restored!", icon="🧠")
+        st.toast(f"✅ Memory Restored! Experience: {st.session_state.step_count}", icon="🧠")
+        time.sleep(1) # Give it a moment to show the toast
+        
     except Exception as e:
         st.error(f"Load Error: {e}")
 
