@@ -6,6 +6,10 @@ import time
 import pandas as pd
 import re # For parsing user commands
 
+import json
+import zipfile
+import io
+
 # ==========================================
 # 1. ADVANCED CONFIGURATION & CSS
 # ==========================================
@@ -632,6 +636,176 @@ def process_step():
 
 
 
+# ==========================================
+#  ROBUST SAVE / LOAD SYSTEM (No Pickle)
+# ==========================================
+def save_brain():
+    """Saves state using JSON (metadata) and NPZ (arrays) inside a ZIP."""
+    
+    # 1. PREPARE METADATA (JSON safe)
+    # We convert numpy scalars to native python types (float/int) for JSON compliance
+    metadata = {
+        'version': 3.0,
+        'wins': int(st.session_state.wins),
+        'steps': int(st.session_state.step_count),
+        'epsilon': float(st.session_state.mind.epsilon),
+        'beta': float(st.session_state.mind.beta),
+        'soul': {
+            'name': st.session_state.soul.user_name,
+            'rel': int(st.session_state.soul.relationship_score),
+            'mood': st.session_state.soul.current_mood,
+            'energy': float(st.session_state.soul.energy)
+        },
+        'config': st.session_state.config,
+        # Save history as simple lists
+        'loss_hist': [float(x) for x in st.session_state.loss_history],
+        'reward_hist': [float(x) for x in st.session_state.reward_history]
+    }
+
+    # 2. PREPARE MEMORY (Convert Deque of Tuples -> Separate Numpy Arrays)
+    # This is much faster and safer than pickling objects
+    buffer_list = list(st.session_state.mind.memory.buffer)
+    if len(buffer_list) > 0:
+        mem_states = np.array([x[0] for x in buffer_list])
+        mem_actions = np.array([x[1] for x in buffer_list])
+        mem_rewards = np.array([x[2] for x in buffer_list])
+        mem_next_states = np.array([x[3] for x in buffer_list])
+        mem_dones = np.array([x[4] for x in buffer_list])
+        mem_priorities = st.session_state.mind.memory.priorities
+        mem_pos = np.array([st.session_state.mind.memory.pos])
+    else:
+        # Handle empty memory case
+        mem_states = np.array([])
+        mem_actions = np.array([]) 
+        mem_rewards = np.array([])
+        mem_next_states = np.array([])
+        mem_dones = np.array([])
+        mem_priorities = np.zeros(st.session_state.config['buffer_size'])
+        mem_pos = np.array([0])
+
+    # 3. CREATE ZIP IN MEMORY
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # A. Write Metadata JSON
+        zf.writestr("metadata.json", json.dumps(metadata, indent=4))
+        
+        # B. Write Neural Weights (Online Net)
+        weights_buffer = io.BytesIO()
+        np.savez(weights_buffer, **st.session_state.mind.online_net)
+        zf.writestr("online_net.npz", weights_buffer.getvalue())
+        
+        # C. Write Target Net
+        target_buffer = io.BytesIO()
+        np.savez(target_buffer, **st.session_state.mind.target_net)
+        zf.writestr("target_net.npz", target_buffer.getvalue())
+        
+        # D. Write Optimizer State
+        opt_buffer = io.BytesIO()
+        np.savez(opt_buffer, 
+                 t=np.array([st.session_state.mind.optimizer.t]),
+                 **{f"m_{k}": v for k, v in st.session_state.mind.optimizer.m.items()},
+                 **{f"v_{k}": v for k, v in st.session_state.mind.optimizer.v.items()}) # Merge dicts hack
+        # Note: We split m and v keys to save in one file
+        # Actually simpler: save m and v in separate files or loops. 
+        # Let's do separate files for clarity to avoid key collisions.
+        
+        # Saving Optimizer M (Momentum)
+        m_buffer = io.BytesIO()
+        np.savez(m_buffer, **st.session_state.mind.optimizer.m)
+        zf.writestr("opt_m.npz", m_buffer.getvalue())
+
+        # Saving Optimizer V (Velocity)
+        v_buffer = io.BytesIO()
+        np.savez(v_buffer, **st.session_state.mind.optimizer.v)
+        zf.writestr("opt_v.npz", v_buffer.getvalue())
+
+        # E. Write Memory
+        mem_buffer = io.BytesIO()
+        np.savez(mem_buffer, 
+                 states=mem_states, actions=mem_actions, 
+                 rewards=mem_rewards, next_states=mem_next_states, 
+                 dones=mem_dones, priorities=mem_priorities, pos=mem_pos)
+        zf.writestr("memory.npz", mem_buffer.getvalue())
+
+    return zip_buffer.getvalue()
+
+def load_brain(uploaded_file):
+    """Restores state from the 'Safe' ZIP format."""
+    try:
+        with zipfile.ZipFile(uploaded_file, "r") as z:
+            # 1. LOAD METADATA
+            with z.open("metadata.json") as f:
+                meta = json.load(f)
+            
+            # Apply Config First
+            st.session_state.config.update(meta['config'])
+            
+            # Apply Stats
+            st.session_state.wins = meta['wins']
+            st.session_state.step_count = meta['steps']
+            st.session_state.loss_history = meta['loss_hist']
+            st.session_state.reward_history = meta['reward_hist']
+            
+            # Apply Soul
+            st.session_state.soul.user_name = meta['soul']['name']
+            st.session_state.soul.relationship_score = meta['soul']['rel']
+            st.session_state.soul.current_mood = meta['soul']['mood']
+            st.session_state.soul.energy = meta['soul']['energy']
+            
+            # Apply Mind Scalars
+            st.session_state.mind.epsilon = meta['epsilon']
+            st.session_state.mind.beta = meta['beta']
+            
+            # 2. LOAD WEIGHTS (Using np.load)
+            # Helper to read .npz from zip
+            def load_npz(filename):
+                with z.open(filename) as f:
+                    buf = io.BytesIO(f.read())
+                    return np.load(buf)
+
+            # Online Net
+            raw_online = load_npz("online_net.npz")
+            st.session_state.mind.online_net = {k: raw_online[k] for k in raw_online.files}
+
+            # Target Net
+            raw_target = load_npz("target_net.npz")
+            st.session_state.mind.target_net = {k: raw_target[k] for k in raw_target.files}
+            
+            # Optimizer
+            raw_m = load_npz("opt_m.npz")
+            st.session_state.mind.optimizer.m = {k: raw_m[k] for k in raw_m.files}
+            
+            raw_v = load_npz("opt_v.npz")
+            st.session_state.mind.optimizer.v = {k: raw_v[k] for k in raw_v.files}
+            
+            # 3. LOAD MEMORY
+            mem_data = load_npz("memory.npz")
+            
+            # Reconstruct Buffer (The tricky part!)
+            if 'states' in mem_data and len(mem_data['states']) > 0:
+                s = mem_data['states']
+                a = mem_data['actions']
+                r = mem_data['rewards']
+                ns = mem_data['next_states']
+                d = mem_data['dones']
+                
+                # Zip them back into a list of tuples
+                # We iterate up to the stored length
+                reconstructed_buffer = []
+                for i in range(len(s)):
+                    reconstructed_buffer.append( (s[i], int(a[i]), r[i], ns[i], bool(d[i])) )
+                
+                st.session_state.mind.memory.buffer = reconstructed_buffer
+                st.session_state.mind.memory.priorities = mem_data['priorities']
+                st.session_state.mind.memory.pos = int(mem_data['pos'][0])
+
+        st.toast("✅ Brain Successfully Implanted! No Errors.", icon="🧠")
+        time.sleep(1)
+        
+    except Exception as e:
+        st.error(f"Critical System Failure during Load: {e}")
+
 
 
 
@@ -674,6 +848,28 @@ m4.metric("Experience", st.session_state.step_count)
 with st.sidebar:
     st.header("⚙️ Control Panel")
     c = st.session_state.config # Shortcut
+
+    # ... inside st.sidebar ...
+
+    # --- NEW: SAVE / LOAD SECTION ---
+    with st.expander("💾 Memory Card (Safe Mode)", expanded=True):
+        
+        # 1. DOWNLOAD
+        if st.button("📦 Create Backup (.zip)"):
+            zip_data = save_brain()
+            st.download_button(
+                label="⬇️ Download Brain",
+                data=zip_data,
+                file_name=f"ALIVE_Gen_{st.session_state.step_count}.zip",
+                mime="application/zip"
+            )
+
+        # 2. UPLOAD
+        uploaded_file = st.file_uploader("Upload Backup", type="zip", key="brain_loader")
+        if uploaded_file is not None:
+            if st.button("♻️ Load Memory"):
+                load_brain(uploaded_file)
+                st.rerun()
 
     with st.expander("🚀 Simulation & World", expanded=True):
         c['sim_speed'] = st.slider("Sim Speed (delay)", 0.0, 1.0, c.get('sim_speed', 0.1), 0.05, help="Delay between autonomous steps.")
