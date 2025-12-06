@@ -680,21 +680,40 @@ def step_environment():
     # 4. Rewards
     # [PRINCE NIK UPDATE]: Magnetic Reward Function
     # We reward movement towards target AND simply existing near the target
+    # 4. Rewards
+    # [PRINCE NIK UPDATE]: The "Electric Fence" & Anti-Lurking System
+    
+    # A. MOVEMENT (The Magnet)
     movement_reward = (prev_dist - curr_dist) * 3.0 
-    proximity_bonus = 10.0 / (curr_dist + 1.0) # The closer it is, the higher this gets
+    
+    # B. PROXIMITY (The Gravity)
+    proximity_bonus = 10.0 / (curr_dist + 1.0)
     
     reward = movement_reward + proximity_bonus
+    
+    # C. ELECTRIC FENCE (Wall Penalty)
+    # If x or y is near the edges (0 or 100), give a massive penalty.
+    # This forces the agent to fear the walls.
+    if (st.session_state.pos[0] <= 2.0 or st.session_state.pos[0] >= 98.0 or 
+        st.session_state.pos[1] <= 2.0 or st.session_state.pos[1] >= 98.0):
+        reward -= 10.0 
+        
+    # D. LAZINESS PENALTY (Anti-Lurking)
+    # If the distance didn't change (it's standing still), punish it.
+    if abs(prev_dist - curr_dist) < 0.05:
+        reward -= 2.0
+    
     done = False
     
     if curr_dist < 5.0:
-        reward = 100.0 # [BOOST]: Increased from 50 to 100 to make winning irresistible
+        reward = 100.0 # Big Win
         done = True
         st.session_state.wins += 1
         st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
         st.session_state.soul.energy = 100
         st.toast("Target Acquired! Reward +100", icon="🎯")
     else:
-        reward -= 0.1 # Time penalty
+        reward -= 0.1 # Standard Time Penalty
     
     # 5. Training Step (TD-MPC Update)
     # FIX: We now generate next_state using the exact same logic as state
