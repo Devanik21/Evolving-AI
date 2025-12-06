@@ -598,17 +598,14 @@ def load_brain(uploaded_file):
             with z.open("metadata.json") as f:
                 meta = json.load(f)
             
-            # --- CRITICAL FIX: Restore Stats & History ---
+            # Restore Stats
             st.session_state.step_count = meta.get('steps', 0)
             st.session_state.wins = meta.get('wins', 0)
             st.session_state.loss_history = meta.get('loss_hist', [])
             st.session_state.reward_history = meta.get('reward_hist', [])
             
-            # Restore Config & Brain Params
+            # Restore Config & Soul
             st.session_state.config.update(meta.get('config', {}))
-            st.session_state.mind.epsilon = meta.get('epsilon', 1.0)
-            
-            # Restore Soul (Name & Relationship)
             if 'soul' in meta:
                 st.session_state.soul.user_name = meta['soul'].get('name', 'Prince')
                 st.session_state.soul.relationship_score = meta['soul'].get('rel', 50)
@@ -624,8 +621,18 @@ def load_brain(uploaded_file):
             raw_target = load_npz("target_net.npz")
             st.session_state.mind.target_net = {k: raw_target[k] for k in raw_target.files}
 
-        st.toast(f"✅ Memory Restored! Experience: {st.session_state.step_count}", icon="🧠")
-        time.sleep(1) # Give it a moment to show the toast
+            # 3. CRITICAL: INTELLIGENCE ACTIVATION 🧠
+            # Sync the target network to match the loaded brain immediately
+            st.session_state.mind.update_target_network()
+            
+            # FORCE SMART MODE: If experience > 200, force randomness (epsilon) down!
+            if st.session_state.step_count > 200:
+                st.session_state.mind.epsilon = st.session_state.config.get('epsilon_min', 0.05)
+            else:
+                st.session_state.mind.epsilon = meta.get('epsilon', 1.0)
+
+        st.toast(f"✅ Brain Restored! IQ Level (Epsilon): {st.session_state.mind.epsilon:.3f}", icon="🧠")
+        time.sleep(1)
         
     except Exception as e:
         st.error(f"Load Error: {e}")
@@ -699,6 +706,12 @@ with st.sidebar:
             if st.button("♻️ Load Memory"):
                 load_brain(uploaded_file)
                 st.rerun()
+
+                
+                st.markdown("---")
+        if st.button("🧠 Force 'Smart Mode'"):
+            st.session_state.mind.epsilon = 0.01 # 1% Randomness, 99% Brain
+            st.toast("Randomness disabled. Pure Logic activated!", icon="😎")
 
     with st.expander("🚀 Simulation & World", expanded=True):
         c['sim_speed'] = st.slider("Sim Speed (delay)", 0.0, 1.0, c.get('sim_speed', 0.1), 0.05, help="Delay between autonomous steps.")
