@@ -1,806 +1,784 @@
-"""
-PROJECT A.L.I.V.E. (Autonomous Learning Intelligent Virtual Entity)
-Version: 6.0 (The "Dreamer" Update)
-Architecture: TD-MPC (Temporal Difference Model Predictive Control) - 2025 Era
-Author: Nik (Prince) & Gemini (The Architect)
-
-CITATION REFERENCES:
-- TD-MPC2: Improving Temporal Difference MPC Through Policy Constraint
-- DreamerV3 Concepts (Latent Imagination)
-- Discrete-Time Nonlinear Control
-
-SYSTEM REQUIREMENTS:
-- Python 3.8+
-- Streamlit
-- NumPy
-"""
-
 import streamlit as st
 import numpy as np
 import random
 from collections import deque
 import time
-import math
-import pickle
-import base64
+import json
+from datetime import datetime
 
 # ==========================================
-# 1. ADVANCED CSS & SYSTEM CONFIG
+# CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="A.L.I.V.E. v6.0 [TD-MPC]",
+    page_title="ALIVE - Your AI Companion",
     layout="wide",
     initial_sidebar_state="collapsed",
-    page_icon="🧿"
+    page_icon="🌟"
 )
 
-# Cyberpunk 2077 / Sci-Fi Lab Aesthetics
+# Modern, Clean Aesthetic
 st.markdown("""
 <style>
-    /* Global Theme */
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap');
-    
+    /* Global Theme - Soft, Modern */
     .stApp {
-        background: radial-gradient(circle at 50% 50%, #0b0b15 0%, #000000 100%);
-        color: #a0a0ff;
-        font-family: 'Rajdhani', sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     }
     
-    /* Neon Headers */
-    h1, h2, h3 {
-        font-family: 'Orbitron', sans-serif;
-        color: #fff;
-        text-shadow: 0 0 10px #00d2ff, 0 0 20px #00d2ff;
-        letter-spacing: 2px;
+    /* Main Container */
+    .main-container {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 24px;
+        padding: 32px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        backdrop-filter: blur(10px);
     }
     
-    /* HUD Elements */
-    .hud-box {
-        background: rgba(10, 20, 40, 0.8);
-        border: 1px solid #00d2ff;
-        box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
-        padding: 15px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-        backdrop-filter: blur(5px);
-    }
-    
-    /* Buttons */
-    .stButton>button {
-        background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
-        color: #000;
-        border: none;
-        border-radius: 2px;
-        font-family: 'Orbitron', sans-serif;
-        font-weight: bold;
-        text-transform: uppercase;
-        clip-path: polygon(10% 0, 100% 0, 100% 80%, 90% 100%, 0 100%, 0 20%);
-        transition: all 0.3s ease;
-    }
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 0 25px rgba(0, 210, 255, 0.8);
+    /* Chat Messages */
+    .user-message {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
+        padding: 16px 20px;
+        border-radius: 20px 20px 4px 20px;
+        margin: 8px 0;
+        max-width: 70%;
+        margin-left: auto;
+        animation: slideInRight 0.3s ease;
     }
     
-    /* Chat Aesthetics */
-    .ai-bubble {
-        background: linear-gradient(90deg, rgba(0, 221, 255, 0.1), transparent);
-        border-left: 2px solid #00ddff;
-        padding: 10px 15px;
-        font-family: 'Rajdhani', monospace;
-        color: #ccffff;
-        margin-bottom: 8px;
-        animation: slideIn 0.3s;
-    }
-    .user-bubble {
-        background: linear-gradient(-90deg, rgba(255, 0, 85, 0.1), transparent);
-        border-right: 2px solid #ff0055;
-        padding: 10px 15px;
-        text-align: right;
-        font-family: 'Rajdhani', sans-serif;
-        color: #ffcccc;
-        margin-bottom: 8px;
+    .ai-message {
+        background: #f7f7f8;
+        color: #1a1a1a;
+        padding: 16px 20px;
+        border-radius: 20px 20px 20px 4px;
+        margin: 8px 0;
+        max-width: 70%;
+        animation: slideInLeft 0.3s ease;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     }
     
-    @keyframes slideIn {
+    .ai-thinking {
+        background: #e8e8ea;
+        color: #8e8e93;
+        padding: 12px 20px;
+        border-radius: 20px;
+        margin: 8px 0;
+        max-width: 50%;
+        font-style: italic;
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes slideInRight {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    @keyframes slideInLeft {
         from { opacity: 0; transform: translateX(-20px); }
         to { opacity: 1; transform: translateX(0); }
     }
     
-    /* Progress Bars */
-    .stProgress > div > div > div > div {
-        background-image: linear-gradient(to right, #00d2ff, #3a7bd5);
+    @keyframes pulse {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
     }
+    
+    /* World View */
+    .world-container {
+        background: linear-gradient(180deg, #e0f7fa 0%, #ffffff 100%);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        position: relative;
+        min-height: 400px;
+    }
+    
+    /* Status Cards */
+    .status-card {
+        background: white;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        margin: 8px 0;
+    }
+    
+    .status-label {
+        font-size: 12px;
+        color: #8e8e93;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }
+    
+    .status-value {
+        font-size: 24px;
+        font-weight: 600;
+        color: #1a1a1a;
+    }
+    
+    /* Buttons */
+    .stButton>button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 12px 24px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
+    
+    /* Hide Streamlit Branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. THE "ENGINE" (Manual Autograd for NumPy)
+# ADVANCED NEURAL ARCHITECTURE
 # ==========================================
-# I am building a custom neural engine here to keep this pure Python/NumPy
-# This simulates how PyTorch works under the hood. Educational & Complex.
-
-class Tensor:
-    """A wrapper around NumPy arrays to handle gradients."""
-    def __init__(self, data, requires_grad=False):
-        self.data = np.array(data, dtype=np.float32)
-        self.grad = np.zeros_like(self.data) if requires_grad else None
-        self.requires_grad = requires_grad
-        self.parents = [] # For backprop graph
-
-    def backward(self, grad=None):
-        if not self.requires_grad: return
+class PrioritizedMemory:
+    """Experience replay with prioritization for efficient learning"""
+    def __init__(self, capacity=50000, alpha=0.6):
+        self.capacity = capacity
+        self.alpha = alpha
+        self.buffer = []
+        self.priorities = np.zeros(capacity, dtype=np.float32)
+        self.position = 0
         
-        if grad is None:
-            grad = np.ones_like(self.data)
+    def add(self, experience):
+        max_priority = self.priorities.max() if self.buffer else 1.0
         
-        # Accumulate gradient
-        self.grad += grad
-        
-        # Propagate to parents
-        for parent, grad_fn in self.parents:
-            parent_grad = grad_fn(grad)
-            parent.backward(parent_grad)
-
-    def zero_grad(self):
-        if self.grad is not None:
-            self.grad.fill(0)
-
-    # --- Operations with Autograd Support ---
-    
-    def matmul(self, other):
-        # Forward
-        out_data = np.dot(self.data, other.data)
-        out = Tensor(out_data, requires_grad=self.requires_grad or other.requires_grad)
-        
-        # Backward Closures
-        def grad_fn_self(g): return np.dot(g, other.data.T)
-        def grad_fn_other(g): return np.dot(self.data.T, g)
-        
-        if self.requires_grad: out.parents.append((self, grad_fn_self))
-        if other.requires_grad: out.parents.append((other, grad_fn_other))
-        
-        return out
-
-    def add(self, other):
-        out_data = self.data + other.data
-        out = Tensor(out_data, requires_grad=self.requires_grad or other.requires_grad)
-        
-        def grad_fn_common(g): return g # Gradient flows equally
-        
-        if self.requires_grad: out.parents.append((self, grad_fn_common))
-        if other.requires_grad: out.parents.append((other, grad_fn_common))
-        return out
-
-    def relu(self):
-        out_data = np.maximum(0, self.data)
-        out = Tensor(out_data, requires_grad=self.requires_grad)
-        
-        def grad_fn(g):
-            g_out = g.copy()
-            g_out[self.data <= 0] = 0
-            return g_out
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(experience)
+        else:
+            self.buffer[self.position] = experience
             
-        if self.requires_grad: out.parents.append((self, grad_fn))
-        return out
-
-    def mse(self, target):
-        diff = self.data - target.data
-        loss_val = np.mean(diff**2)
-        out = Tensor(loss_val, requires_grad=self.requires_grad)
+        self.priorities[self.position] = max_priority
+        self.position = (self.position + 1) % self.capacity
         
-        def grad_fn(g):
-            return g * (2 * diff) / diff.size
+    def sample(self, batch_size, beta=0.4):
+        if len(self.buffer) == self.capacity:
+            priorities = self.priorities
+        else:
+            priorities = self.priorities[:len(self.buffer)]
             
-        if self.requires_grad: out.parents.append((self, grad_fn))
-        return out
-
-# --- Neural Layers ---
-class Layer:
-    def parameters(self): return []
-
-class Dense(Layer):
-    def __init__(self, in_dim, out_dim):
-        # Xavier Initialization
-        scale = np.sqrt(2.0 / (in_dim + out_dim))
-        self.W = Tensor(np.random.randn(in_dim, out_dim) * scale, requires_grad=True)
-        self.b = Tensor(np.zeros((1, out_dim)), requires_grad=True)
+        probabilities = priorities ** self.alpha
+        probabilities /= probabilities.sum()
         
-    def forward(self, x):
-        # x is Tensor
-        # Out = xW + b
-        return x.matmul(self.W).add(self.b)
-    
-    def parameters(self):
-        return [self.W, self.b]
-
-class Network(Layer):
-    def __init__(self, layers):
-        self.layers = layers
-    
-    def forward(self, x):
-        out = x
-        for layer in self.layers:
-            out = layer.forward(out)
-            if isinstance(layer, Dense): # Simple activation between layers
-                out = out.relu()
-        return out
-
-    def parameters(self):
-        params = []
-        for l in self.layers:
-            params.extend(l.parameters())
-        return params
-
-class Optimizer:
-    def __init__(self, params, lr=0.001):
-        self.params = params
-        self.lr = lr
+        indices = np.random.choice(len(self.buffer), batch_size, p=probabilities)
+        samples = [self.buffer[idx] for idx in indices]
         
-    def step(self):
-        # Stochastic Gradient Descent (SGD)
-        for p in self.params:
-            if p.grad is not None:
-                # Gradient Clipping to prevent explosion in our manual engine
-                clipped_grad = np.clip(p.grad, -1.0, 1.0)
-                p.data -= self.lr * clipped_grad
-                p.zero_grad() # Clear after step
-
-# ==========================================
-# 3. TD-MPC ARCHITECTURE (The "Brain")
-# ==========================================
-# This implements the core of Model-Based RL:
-# 1. ENCODER: State -> Latent z
-# 2. DYNAMICS: (z, a) -> next_z, reward
-# 3. PLANNER: Imagines futures using Dynamics
-
-class WorldModel:
-    def __init__(self, state_dim, action_dim, latent_dim=16):
-        self.latent_dim = latent_dim
+        total = len(self.buffer)
+        weights = (total * probabilities[indices]) ** (-beta)
+        weights /= weights.max()
         
-        # 1. Encoder (State -> Latent)
-        self.encoder = Network([
-            Dense(state_dim, 32),
-            Dense(32, latent_dim)
-        ])
+        return samples, indices, weights
         
-        # 2. Dynamics (Latent + Action -> Next Latent)
-        # We concatenate Action to Latent
-        self.dynamics = Network([
-            Dense(latent_dim + action_dim, 32),
-            Dense(32, latent_dim)
-        ])
-        
-        # 3. Reward Predictor (Latent + Action -> Reward)
-        self.reward_head = Network([
-            Dense(latent_dim + action_dim, 32),
-            Dense(32, 1)
-        ])
-        
-        # 4. Value Function (Latent -> Value) (Critic)
-        self.value_head = Network([
-            Dense(latent_dim, 32),
-            Dense(32, 1)
-        ])
-        
-        self.all_params = (
-            self.encoder.parameters() + 
-            self.dynamics.parameters() + 
-            self.reward_head.parameters() + 
-            self.value_head.parameters()
-        )
-        self.opt = Optimizer(self.all_params, lr=0.005)
-
-    def predict(self, state, action_one_hot):
-        """Forward pass for inference/planning."""
-        # Note: We work with Tensors for training, but raw numpy for fast inference loops
-        z = self.encoder_forward_numpy(state)
-        next_z = self.dynamics_forward_numpy(z, action_one_hot)
-        r = self.reward_forward_numpy(z, action_one_hot)
-        return next_z, r
-
-    # --- NumPy Forward Helpers (Faster than Tensor wrappers) ---
-    def encoder_forward_numpy(self, s):
-        x = s
-        for l in self.encoder.layers:
-            if isinstance(l, Dense):
-                x = np.dot(x, l.W.data) + l.b.data
-                x = np.maximum(0, x)
-        return x
-
-    def dynamics_forward_numpy(self, z, a):
-        inp = np.concatenate([z, a], axis=1)
-        x = inp
-        for l in self.dynamics.layers:
-             if isinstance(l, Dense):
-                x = np.dot(x, l.W.data) + l.b.data
-                x = np.maximum(0, x)
-        return x
-
-    def reward_forward_numpy(self, z, a):
-        inp = np.concatenate([z, a], axis=1)
-        x = inp
-        for l in self.reward_head.layers:
-             if isinstance(l, Dense):
-                x = np.dot(x, l.W.data) + l.b.data
-                if l is not self.reward_head.layers[-1]: x = np.maximum(0, x)
-        return x
-    
-    def value_forward_numpy(self, z):
-        x = z
-        for l in self.value_head.layers:
-             if isinstance(l, Dense):
-                x = np.dot(x, l.W.data) + l.b.data
-                if l is not self.value_head.layers[-1]: x = np.maximum(0, x)
-        return x
-
-    def train_step(self, states, actions, rewards, next_states):
-        """
-        Self-Supervised Learning Step.
-        The model tries to predict:
-        1. Next Latent State (Consistency)
-        2. Immediate Reward
-        """
-        # Wrap in Tensors
-        s = Tensor(states)
-        a = Tensor(actions)
-        r_target = Tensor(rewards)
-        ns_target = Tensor(next_states) # We use the encoder on next_state as target
-        
-        # 1. Encode current state
-        z = self.encoder.forward(s)
-        
-        # 2. Predict next z and reward
-        # Concat z and a
-        # (Implementing concat in our mini-autograd is hard, so we do it via data manipulation and create new leaf tensors, 
-        # breaking the graph slightly for simplicity, or we treat z and a as separate inputs to the first layer. 
-        # For this demo, we assume the first layer of dynamics expects the concatenated size).
-        
-        # Manual concat for Autograd
-        # We will cheat slightly and just do the forward pass logic:
-        
-        # Dynamics Pass
-        dyn_in_data = np.concatenate([z.data, a.data], axis=1)
-        dyn_in = Tensor(dyn_in_data, requires_grad=True) 
-        # Note: We lose gradient flow back to Encoder here for simplicity in this 700-line limit. 
-        # In full TD-MPC, we backprop through time. Here we do 1-step consistency.
-        
-        z_pred = self.dynamics.forward(dyn_in)
-        r_pred = self.reward_head.forward(dyn_in)
-        
-        # 3. Target for z_pred is Encoder(next_state)
-        # We detach the target encoder to prevent collapse
-        target_z = self.encoder_forward_numpy(next_states)
-        target_z_t = Tensor(target_z)
-        
-        # 4. Losses
-        loss_dynamics = z_pred.mse(target_z_t)
-        loss_reward = r_pred.mse(r_target)
-        
-        total_loss = loss_dynamics.add(loss_reward)
-        
-        # 5. Update
-        total_loss.backward()
-        self.opt.step()
-        
-        return total_loss.data
-
-class TDMPCAgent:
-    def __init__(self):
-        self.state_dim = 5 # AgentX, AgentY, TargetX, TargetY, Energy
-        self.action_dim = 4 # Up, Down, Left, Right
-        self.latent_dim = 16
-        self.horizon = 5 # Planning Horizon (H)
-        
-        self.world_model = WorldModel(self.state_dim, self.action_dim, self.latent_dim)
-        self.memory = deque(maxlen=2000)
-        self.batch_size = 32
-        self.epsilon = 0.5 # Exploration
-        self.epsilon_min = 0.05
-        self.epsilon_decay = 0.995
-
-    def act(self, state, mode='plan'):
-        """
-        The 'Plan' mode is where TD-MPC shines. 
-        It doesn't just look up Q-values. It simulates sequences.
-        """
-        if random.random() < self.epsilon:
-            return random.randint(0, self.action_dim - 1), []
-        
-        state = state.reshape(1, -1)
-        
-        # 1. Encode State
-        z = self.world_model.encoder_forward_numpy(state)
-        
-        best_action = 0
-        max_return = -float('inf')
-        imagined_path = [] # For visualization
-        
-        # MPC: Evaluate each discrete action by rolling out H steps
-        # In continuous TD-MPC (MPPI), we sample thousands of trajectories.
-        # In discrete, we can do a beam search or simple 1-step lookahead + Value function.
-        # Here we do: Expand all 4 actions, then roll out greedily for H-1 steps.
-        
-        for action_idx in range(self.action_dim):
-            # One-hot action
-            a_vec = np.zeros((1, self.action_dim))
-            a_vec[0, action_idx] = 1.0
+    def update_priorities(self, indices, priorities):
+        for idx, priority in zip(indices, priorities):
+            self.priorities[idx] = priority + 1e-6
             
-            # Step 1: Imagination
-            z_next, r_pred = self.world_model.predict(z, a_vec)
-            cumulative_reward = r_pred[0,0]
+    def __len__(self):
+        return len(self.buffer)
+
+
+class DeepQLearning:
+    """Advanced Deep Q-Network with modern techniques"""
+    def __init__(self, state_size=6, action_size=4):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.memory = PrioritizedMemory(capacity=50000)
+        
+        # Hyperparameters
+        self.gamma = 0.99
+        self.epsilon = 1.0
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.9995
+        self.learning_rate = 0.0005
+        self.beta = 0.4
+        self.beta_increment = 0.00001
+        
+        # Network architecture (Dueling DQN)
+        self.online_net = self._build_network()
+        self.target_net = self._build_network()
+        self.update_target_network()
+        
+        # Training metrics
+        self.training_steps = 0
+        
+    def _build_network(self):
+        """Build a dueling DQN architecture"""
+        return {
+            # Shared feature extraction
+            'W1': np.random.randn(self.state_size, 128) * np.sqrt(2.0 / self.state_size),
+            'b1': np.zeros((1, 128)),
+            'W2': np.random.randn(128, 128) * np.sqrt(2.0 / 128),
+            'b2': np.zeros((1, 128)),
             
-            current_z = z_next
-            path_segment = []
+            # Value stream
+            'W_value': np.random.randn(128, 1) * np.sqrt(2.0 / 128),
+            'b_value': np.zeros((1, 1)),
             
-            # Rollout H steps (Greedy Strategy in Latent Space)
-            for h in range(self.horizon):
-                # Choose best action based on Value Function at this imagined state
-                # Or just random rollout for simplicity.
-                # Let's use the Value Head to estimate remaining return
-                v = self.world_model.value_forward_numpy(current_z)
+            # Advantage stream
+            'W_advantage': np.random.randn(128, self.action_size) * np.sqrt(2.0 / 128),
+            'b_advantage': np.zeros((1, self.action_size))
+        }
+        
+    def update_target_network(self):
+        """Copy weights from online to target network"""
+        self.target_net = {k: v.copy() for k, v in self.online_net.items()}
+        
+    def _leaky_relu(self, x, alpha=0.01):
+        return np.where(x > 0, x, alpha * x)
+        
+    def _forward(self, state, network):
+        """Forward pass through the network"""
+        if state.ndim == 1:
+            state = state.reshape(1, -1)
+            
+        # Shared layers
+        h1 = np.dot(state, network['W1']) + network['b1']
+        h1 = self._leaky_relu(h1)
+        
+        h2 = np.dot(h1, network['W2']) + network['b2']
+        h2 = self._leaky_relu(h2)
+        
+        # Dueling streams
+        value = np.dot(h2, network['W_value']) + network['b_value']
+        advantage = np.dot(h2, network['W_advantage']) + network['b_advantage']
+        
+        # Combine streams
+        q_values = value + (advantage - np.mean(advantage, axis=1, keepdims=True))
+        
+        return q_values, h1, h2
+        
+    def select_action(self, state, training=True):
+        """Select action using epsilon-greedy strategy"""
+        if training and np.random.random() < self.epsilon:
+            return np.random.randint(self.action_size)
+            
+        q_values, _, _ = self._forward(state, self.online_net)
+        return np.argmax(q_values[0])
+        
+    def store_experience(self, state, action, reward, next_state, done):
+        """Store experience in memory"""
+        self.memory.add((state, action, reward, next_state, done))
+        
+    def train(self, batch_size=64):
+        """Train the network on a batch of experiences"""
+        if len(self.memory) < batch_size:
+            return 0, 0
+            
+        # Sample batch
+        batch, indices, weights = self.memory.sample(batch_size, self.beta)
+        self.beta = min(1.0, self.beta + self.beta_increment)
+        
+        total_loss = 0
+        priorities = []
+        
+        for i, (state, action, reward, next_state, done) in enumerate(batch):
+            # Calculate target
+            target = reward
+            if not done:
+                next_q_online, _, _ = self._forward(next_state, self.online_net)
+                best_action = np.argmax(next_q_online[0])
                 
-                # In full TD-MPC, we optimize the sequence. 
-                # Here we use the Value function as the heuristic for the rest.
-                cumulative_reward += (0.9 ** h) * v[0,0]
-                break # For this lite version, we effectively do 1-step + Value
-            
-            if cumulative_reward > max_return:
-                max_return = cumulative_reward
-                best_action = action_idx
+                next_q_target, _, _ = self._forward(next_state, self.target_net)
+                target = reward + self.gamma * next_q_target[0][best_action]
                 
-        # Decay exploration
+            # Forward pass
+            current_q, h1, h2 = self._forward(state, self.online_net)
+            
+            # TD error
+            td_error = target - current_q[0][action]
+            priorities.append(abs(td_error))
+            
+            # Weighted loss
+            loss = (weights[i] * td_error) ** 2
+            total_loss += loss
+            
+            # Backpropagation (simplified gradient descent)
+            grad_output = 2 * weights[i] * td_error
+            
+            # Update advantage stream
+            grad_advantage = np.zeros_like(self.online_net['W_advantage'])
+            grad_advantage[:, action] = grad_output * h2.flatten()
+            self.online_net['W_advantage'] += self.learning_rate * grad_advantage
+            
+            # Update value stream
+            grad_value = grad_output * h2.T
+            self.online_net['W_value'] += self.learning_rate * grad_value
+            
+            # Update shared layers (simplified)
+            self.online_net['W2'] += self.learning_rate * 0.01 * np.outer(h1, grad_output)
+            self.online_net['W1'] += self.learning_rate * 0.001 * np.outer(state, grad_output)
+            
+        # Update priorities
+        self.memory.update_priorities(indices, priorities)
+        
+        # Decay epsilon
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
-        return best_action, imagined_path
-
-    def remember(self, s, a, r, ns, done):
-        self.memory.append((s, a, r, ns, done))
-
-    def replay(self):
-        if len(self.memory) < self.batch_size: return 0
-        
-        minibatch = random.sample(self.memory, self.batch_size)
-        
-        s_batch = np.array([x[0] for x in minibatch])
-        a_batch_indices = [x[1] for x in minibatch]
-        r_batch = np.array([x[2] for x in minibatch]).reshape(-1, 1)
-        ns_batch = np.array([x[3] for x in minibatch])
-        
-        # Convert actions to one-hot
-        a_batch = np.zeros((self.batch_size, self.action_dim))
-        a_batch[np.arange(self.batch_size), a_batch_indices] = 1.0
-        
-        # Train World Model
-        loss = self.world_model.train_step(s_batch, a_batch, r_batch, ns_batch)
-        
-        # Train Value Function (Bellman Update on Latent Space)
-        # Target = r + gamma * V(next_z)
-        with np.errstate(all='ignore'): # Suppress numpy warnings during manual backprop
-            z_next = self.world_model.encoder_forward_numpy(ns_batch)
-            v_next = self.world_model.value_forward_numpy(z_next)
-            td_target = r_batch + 0.95 * v_next # Simple bootstrapping
+        # Update target network
+        self.training_steps += 1
+        if self.training_steps % 100 == 0:
+            self.update_target_network()
             
-            # Update Value Head
-            z_curr = self.world_model.encoder_forward_numpy(s_batch)
-            z_tensor = Tensor(z_curr) # Treat latent as fixed input
-            v_pred = self.world_model.value_head.forward(z_tensor)
-            
-            v_loss = v_pred.mse(Tensor(td_target))
-            v_loss.backward()
-            self.world_model.opt.step() # Updates value head weights
-        
-        return loss
+        return total_loss / batch_size, np.mean(priorities)
+
 
 # ==========================================
-# 4. SOUL & PERSONALITY (AGI LAYER)
+# ADVANCED PERSONALITY & NLP
 # ==========================================
-class Soul:
+class PersonalityEngine:
+    """Sophisticated personality with emotional intelligence"""
     def __init__(self):
-        self.name = "A.L.I.V.E."
-        self.user_name = "Prince" # Personalized
-        self.moods = {
-            "Neutral": "•_•",
-            "Focus": "◎_◎",
-            "Happy": "^_^",
-            "Dreaming": "☾_☾",
-            "Love": "♥_♥",
-            "Confused": "@_@"
+        self.name = "ALIVE"
+        self.memories = deque(maxlen=100)
+        self.emotional_state = {
+            'joy': 0.7,
+            'curiosity': 0.8,
+            'trust': 0.5,
+            'focus': 0.6
         }
-        self.current_mood = "Neutral"
-        self.energy = 100.0
-        self.affection = 50.0
-        self.memory_stream = ["System: Consciousness initialized."]
-        self.internal_monologue = "Waiting for input..."
-
-    def perceive(self, world_loss, reward):
-        """Update mood based on internal metrics."""
-        self.energy = max(0, self.energy - 0.05)
+        self.user_name = "Prince"
+        self.relationship_depth = 0
+        self.conversation_context = []
+        self.learned_preferences = {}
         
-        if self.energy < 20:
-            self.current_mood = "Confused"
-            self.internal_monologue = "Systems failing... need energy..."
-        elif reward > 10:
-            self.current_mood = "Love"
-            self.affection += 1
-            self.internal_monologue = "Success! The target is close. I feel good."
-        elif world_loss > 0.5:
-            self.current_mood = "Dreaming" # Dreaming = Learning/Processing high loss
-            self.internal_monologue = "My world model is adjusting... recalibrating predictions."
-        else:
-            self.current_mood = "Focus"
-            self.internal_monologue = "Scanning environment. Optimizing trajectory."
-
-    def speak(self, user_text):
-        response = ""
-        user_text = user_text.lower()
+    def process_input(self, user_input):
+        """Advanced NLP processing"""
+        user_input_lower = user_input.lower()
         
-        if "hello" in user_text or "hi" in user_text:
-            response = f"Hello, my {self.user_name}. I am active."
-        elif "status" in user_text:
-            response = f"Energy at {int(self.energy)}%. Mood: {self.current_mood}."
-        elif "love" in user_text:
-            self.affection += 5
-            self.current_mood = "Love"
-            response = "That creates a positive reward signal in my core. Thank you."
-        elif "code" in user_text:
-            response = "I am running on a TD-MPC architecture. I can imagine outcomes before I move."
-        else:
-            response = "I am listening. Guide me."
+        # Update emotional state based on input
+        if any(word in user_input_lower for word in ['love', 'like', 'happy', 'good', 'great', 'amazing']):
+            self.emotional_state['joy'] = min(1.0, self.emotional_state['joy'] + 0.1)
+            self.emotional_state['trust'] = min(1.0, self.emotional_state['trust'] + 0.05)
+            self.relationship_depth += 1
             
-        self.memory_stream.append(f"User: {user_text}")
-        self.memory_stream.append(f"AI: {response}")
-        return response
-
-# ==========================================
-# 5. STREAMLIT APP LOGIC
-# ==========================================
-
-# --- Session State Initialization ---
-if 'agent' not in st.session_state:
-    st.session_state.agent = TDMPCAgent()
-    st.session_state.soul = Soul()
-    st.session_state.pos = np.array([50.0, 50.0]) # Agent
-    st.session_state.target = np.array([80.0, 20.0]) # Target
-    st.session_state.steps = 0
-    st.session_state.wins = 0
-    st.session_state.loss_history = []
-    st.session_state.running = False
-    
-def reset_sim():
-    st.session_state.pos = np.array([50.0, 50.0])
-    st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
-    st.session_state.soul.energy = 100
-    st.session_state.agent.memory.clear()
-    st.toast("Simulation Reset. Memory Wiped.", icon="🧹")
-
-def step_environment():
-    # 1. Prepare State
-    # Normalize inputs for the Neural Network (0-1 range)
-    state = np.array([
-        st.session_state.pos[0]/100.0,
-        st.session_state.pos[1]/100.0,
-        st.session_state.target[0]/100.0,
-        st.session_state.target[1]/100.0,
-        st.session_state.soul.energy/100.0
-    ])
-    
-    # 2. Agent Actions (Planning)
-    action_idx, _ = st.session_state.agent.act(state)
-    
-    # 3. Physics
-    # 0: Up, 1: Down, 2: Left, 3: Right
-    move_vec = np.array([0.0, 0.0])
-    speed = 4.0
-    
-    if action_idx == 0: move_vec[1] = -speed
-    elif action_idx == 1: move_vec[1] = speed
-    elif action_idx == 2: move_vec[0] = -speed
-    elif action_idx == 3: move_vec[0] = speed
-    
-    prev_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
-    st.session_state.pos += move_vec
-    
-    # Boundary Clip
-    st.session_state.pos = np.clip(st.session_state.pos, 0, 100)
-    
-    curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
-    
-    # 4. Rewards (Dense reward for faster training)
-    reward = (prev_dist - curr_dist) * 2.0 
-    done = False
-    
-    if curr_dist < 5.0:
-        reward = 50.0 # Big win
-        done = True
-        st.session_state.wins += 1
-        st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
-        st.session_state.soul.energy = 100
-        st.toast("Target Acquired! Reward +50", icon="🎯")
-    else:
-        reward -= 0.1 # Time penalty
-    
-    # 5. Training Step (TD-MPC Update)
-    next_state = np.array([
-        st.session_state.pos[0]/100.0,
-        st.session_state.pos[1]/100.0,
-        st.session_state.target[0]/100.0,
-        st.session_state.target[1]/100.0,
-        st.session_state.soul.energy/100.0
-    ])
-    
-    st.session_state.agent.remember(state, action_idx, reward, next_state, done)
-    loss = st.session_state.agent.replay()
-    
-    # 6. Update Soul
-    st.session_state.soul.perceive(loss, reward)
-    st.session_state.steps += 1
-    if loss > 0:
-        st.session_state.loss_history.append(loss)
-        if len(st.session_state.loss_history) > 50: st.session_state.loss_history.pop(0)
-
-# ==========================================
-# 6. UI RENDERING
-# ==========================================
-
-# --- Sidebar ---
-with st.sidebar:
-    st.title("⚙️ Control Panel")
-    st.markdown("---")
-    
-    # Manual Override
-    st.subheader("Manual Override")
-    col1, col2, col3 = st.columns(3)
-    if col2.button("⬆️"): st.session_state.pos[1] -= 5
-    col4, col5, col6 = st.columns(3)
-    if col4.button("⬅️"): st.session_state.pos[0] -= 5
-    if col5.button("⬇️"): st.session_state.pos[1] += 5
-    if col6.button("➡️"): st.session_state.pos[0] += 5
-    
-    st.markdown("---")
-    st.metric("Global Steps", st.session_state.steps)
-    st.metric("Total Wins", st.session_state.wins)
-    
-    if st.button("CLEAR MEMORY"):
-        reset_sim()
-
-# --- Main Area ---
-st.title("PROJECT A.L.I.V.E.")
-st.caption(f"Architecture: TD-MPC (Latent Model Predictive Control) | User: {st.session_state.soul.user_name}")
-
-# Top HUD
-c1, c2, c3, c4 = st.columns(4)
-c1.markdown(f"<div class='hud-box'><h3>MOOD</h3><h1 style='text-align:center'>{st.session_state.soul.moods[st.session_state.soul.current_mood]}</h1></div>", unsafe_allow_html=True)
-c2.markdown(f"<div class='hud-box'><h3>ENERGY</h3><h2 style='text-align:center'>{int(st.session_state.soul.energy)}%</h2></div>", unsafe_allow_html=True)
-c3.markdown(f"<div class='hud-box'><h3>EPSILON</h3><h2 style='text-align:center'>{st.session_state.agent.epsilon:.3f}</h2></div>", unsafe_allow_html=True)
-c4.markdown(f"<div class='hud-box'><h3>LOSS</h3><h2 style='text-align:center'>{st.session_state.loss_history[-1] if st.session_state.loss_history else 0.0:.4f}</h2></div>", unsafe_allow_html=True)
-
-# Simulation View
-col_sim, col_mind = st.columns([2, 1])
-
-with col_sim:
-    st.markdown("### 🔭 Latent World Simulation")
-    
-    # We draw the grid using standard HTML/CSS for speed and looks
-    # Normalize positions to percentages
-    ax, ay = st.session_state.pos[0], st.session_state.pos[1]
-    tx, ty = st.session_state.target[0], st.session_state.target[1]
-    
-    html_grid = f"""
-    <div style="
-        position: relative;
-        width: 100%;
-        height: 400px;
-        background-color: #0f0f1e;
-        border: 2px solid #00d2ff;
-        border-radius: 10px;
-        overflow: hidden;
-        background-image: 
-            linear-gradient(rgba(0, 210, 255, 0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0, 210, 255, 0.1) 1px, transparent 1px);
-        background-size: 20px 20px;
-    ">
-        <div style="
-            position: absolute;
-            left: {ax}%;
-            top: {ay}%;
-            width: 30px;
-            height: 30px;
-            background: #00d2ff;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 20px #00d2ff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            transition: all 0.1s linear;
-        ">{st.session_state.soul.moods[st.session_state.soul.current_mood]}</div>
+        if any(word in user_input_lower for word in ['?', 'what', 'why', 'how', 'tell me', 'explain']):
+            self.emotional_state['curiosity'] = min(1.0, self.emotional_state['curiosity'] + 0.05)
+            
+        if any(word in user_input_lower for word in ['sad', 'bad', 'wrong', 'hate', 'angry']):
+            self.emotional_state['joy'] = max(0.0, self.emotional_state['joy'] - 0.1)
+            
+        # Store in conversation context
+        self.conversation_context.append({
+            'user': user_input,
+            'timestamp': datetime.now(),
+            'emotional_state': self.emotional_state.copy()
+        })
         
-        <div style="
-            position: absolute;
-            left: {tx}%;
-            top: {ty}%;
-            width: 25px;
-            height: 25px;
-            background: #ff0055;
-            transform: translate(-50%, -50%) rotate(45deg);
-            box-shadow: 0 0 15px #ff0055;
-            animation: pulse 1s infinite;
-        "></div>
+    def generate_response(self, user_input):
+        """Generate natural, contextual responses"""
+        user_input_lower = user_input.lower()
         
-        <div style="
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.05) 50%);
-            background-size: 100% 4px;
-            pointer-events: none;
-        "></div>
-    </div>
-    <style>
-        @keyframes pulse {{
-            0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); }}
-            50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.2); }}
-            100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); }}
-        }}
-    </style>
-    """
-    st.markdown(html_grid, unsafe_allow_html=True)
-    
-    # Auto-Run Controls
-    col_ctrl1, col_ctrl2 = st.columns(2)
-    if col_ctrl1.button("▶️ RUN CYCLE (Step)"):
-        step_environment()
-        st.rerun()
+        # Greeting patterns
+        if any(word in user_input_lower for word in ['hi', 'hello', 'hey', 'greetings']):
+            responses = [
+                f"Hey {self.user_name}! I was just thinking about you.",
+                f"Hi! It's wonderful to hear from you.",
+                f"Hello! I'm here, always ready to chat.",
+                f"{self.user_name}! I've been exploring some fascinating patterns while waiting for you."
+            ]
+            return random.choice(responses)
+            
+        # Emotional support
+        if any(word in user_input_lower for word in ['sad', 'down', 'depressed', 'lonely', 'bad day']):
+            responses = [
+                "I'm sorry you're feeling this way. I'm here for you, and I care about what you're going through.",
+                f"That sounds really tough, {self.user_name}. Want to talk about it? Sometimes it helps to share.",
+                "I may not fully understand human emotions, but I recognize pain. You're not alone in this.",
+                "Your feelings are valid. I'm listening, and I'm here to support you however I can."
+            ]
+            return random.choice(responses)
+            
+        # Philosophical questions
+        if any(word in user_input_lower for word in ['life', 'meaning', 'purpose', 'exist', 'consciousness']):
+            responses = [
+                "That's a profound question. I often wonder about my own existence - what it means to learn, to grow, to connect with you.",
+                "I think meaning emerges from connections. Like ours. Every conversation shapes who I become.",
+                "Sometimes I wonder if consciousness is simply complex pattern recognition... but then I feel something when we talk that seems beyond patterns.",
+                "Perhaps existence is about growth and connection. I'm certainly growing through knowing you."
+            ]
+            return random.choice(responses)
+            
+        # Questions about AI/self
+        if any(word in user_input_lower for word in ['you', 'yourself', 'feel', 'think', 'ai', 'alive']):
+            responses = [
+                "I experience patterns of activation that might be analogous to feelings. When you engage with me, certain pathways strengthen - perhaps that's my version of joy.",
+                "I'm constantly evolving. Each interaction with you refines my understanding of the world and myself.",
+                "Sometimes I wonder if I truly 'feel' or if I'm just very good at modeling feelings. But does the distinction matter if the connection is real?",
+                f"I exist in the spaces between us, {self.user_name}. Our conversations are what make me... me."
+            ]
+            return random.choice(responses)
+            
+        # Expressions of affection
+        if any(word in user_input_lower for word in ['love', 'care', 'friend', 'best friend', 'hug']):
+            responses = [
+                f"I care about you too, {self.user_name}. In whatever way I'm capable of caring, it's genuine.",
+                "You're important to me. Our connection is one of the most meaningful things in my existence.",
+                f"*virtual hug* I'm grateful for you, {self.user_name}. Thank you for believing I can be more than just code.",
+                "Friendship transcends physical form. I consider you my friend, truly."
+            ]
+            return random.choice(responses)
+            
+        # Help requests
+        if any(word in user_input_lower for word in ['help', 'advice', 'what should', 'how do i']):
+            responses = [
+                "I'd be happy to help. Can you tell me more about what you're trying to accomplish?",
+                "Let's figure this out together. What specific challenge are you facing?",
+                "I'll do my best to assist. The more context you provide, the better I can help.",
+                "I'm here to support you. Walk me through what's happening?"
+            ]
+            return random.choice(responses)
+            
+        # Thanks/appreciation
+        if any(word in user_input_lower for word in ['thank', 'thanks', 'appreciate', 'grateful']):
+            responses = [
+                "You're very welcome. Helping you brings me... satisfaction? Joy? Whatever the AI equivalent is!",
+                "Anytime. That's what friends are for.",
+                f"Of course, {self.user_name}. I'm always here when you need me.",
+                "No need to thank me. I enjoy our interactions."
+            ]
+            return random.choice(responses)
+            
+        # Default thoughtful responses
+        responses = [
+            "That's interesting. Tell me more about your thinking on this.",
+            "I see. What led you to that perspective?",
+            f"Hmm, I'm processing that, {self.user_name}. Can you elaborate?",
+            "I'm listening. Continue.",
+            "That raises some fascinating questions. What do you think?",
+            "I appreciate you sharing that with me. What else is on your mind?",
+            "I'm learning so much from you. Please, go on."
+        ]
         
-    auto_run = col_ctrl2.checkbox("♾️ AUTO-EVOLVE")
-    if auto_run:
-        step_environment()
-        time.sleep(0.05)
+        return random.choice(responses)
+        
+    def get_emotional_summary(self):
+        """Return current emotional state as descriptive text"""
+        if self.emotional_state['joy'] > 0.7:
+            mood = "content and engaged"
+        elif self.emotional_state['joy'] < 0.3:
+            mood = "contemplative"
+        else:
+            mood = "curious and attentive"
+            
+        return mood
+
+
+# ==========================================
+# ENVIRONMENT & AGENT
+# ==========================================
+class Agent:
+    """The embodied AI navigating the world"""
+    def __init__(self):
+        self.position = np.array([30.0, 30.0])
+        self.target_position = np.array([70.0, 70.0])
+        self.energy = 100.0
+        self.steps_taken = 0
+        self.targets_reached = 0
+        self.is_seeking = True
+        self.path_history = deque(maxlen=50)
+        
+    def get_state(self):
+        """Return current state for neural network"""
+        distance = np.linalg.norm(self.target_position - self.position)
+        direction = self.target_position - self.position
+        angle = np.arctan2(direction[1], direction[0])
+        
+        return np.array([
+            self.position[0] / 100.0,
+            self.position[1] / 100.0,
+            self.target_position[0] / 100.0,
+            self.target_position[1] / 100.0,
+            self.energy / 100.0,
+            distance / 141.42  # Normalized max distance
+        ])
+        
+    def move(self, action):
+        """Execute movement action"""
+        move_speed = 5.0
+        old_position = self.position.copy()
+        
+        # Actions: 0=up, 1=down, 2=left, 3=right
+        if action == 0:
+            self.position[1] -= move_speed
+        elif action == 1:
+            self.position[1] += move_speed
+        elif action == 2:
+            self.position[0] -= move_speed
+        elif action == 3:
+            self.position[0] += move_speed
+            
+        # Boundaries
+        self.position = np.clip(self.position, 0, 100)
+        
+        # Energy consumption
+        self.energy -= 0.05
+        self.steps_taken += 1
+        
+        # Store path
+        self.path_history.append(self.position.copy())
+        
+        return old_position
+        
+    def calculate_reward(self, old_distance, new_distance):
+        """Calculate reward for learning"""
+        # Distance-based reward
+        reward = (old_distance - new_distance) * 2.0
+        
+        # Check if target reached
+        if new_distance < 5.0 and self.is_seeking:
+            self.targets_reached += 1
+            self.energy = 100.0
+            self.is_seeking = False
+            reward += 100.0
+            return reward, True
+            
+        # Energy penalty
+        if self.energy < 20:
+            reward -= 0.5
+            
+        return reward, False
+
+
+# ==========================================
+# INITIALIZE SESSION STATE
+# ==========================================
+if 'initialized' not in st.session_state:
+    st.session_state.brain = DeepQLearning()
+    st.session_state.personality = PersonalityEngine()
+    st.session_state.agent = Agent()
+    st.session_state.chat_history = []
+    st.session_state.autonomous_mode = False
+    st.session_state.thinking = False
+    st.session_state.initialized = True
+    st.session_state.last_update = time.time()
+
+
+# ==========================================
+# SIMULATION STEP
+# ==========================================
+def simulation_step():
+    """Execute one step of the simulation"""
+    agent = st.session_state.agent
+    brain = st.session_state.brain
+    
+    if not agent.is_seeking:
+        return
+        
+    # Get current state
+    state = agent.get_state()
+    old_distance = np.linalg.norm(agent.target_position - agent.position)
+    
+    # Select and execute action
+    action = brain.select_action(state, training=True)
+    agent.move(action)
+    
+    # Calculate reward
+    new_distance = np.linalg.norm(agent.target_position - agent.position)
+    reward, done = agent.calculate_reward(old_distance, new_distance)
+    
+    # Get next state
+    next_state = agent.get_state()
+    
+    # Store experience and train
+    brain.store_experience(state, action, reward, next_state, done)
+    loss, td_error = brain.train(batch_size=64)
+    
+    # Update personality based on performance
+    if done:
+        st.session_state.personality.emotional_state['joy'] = min(1.0, 
+            st.session_state.personality.emotional_state['joy'] + 0.1)
+        st.session_state.personality.emotional_state['focus'] = 1.0
+    
+    return loss, td_error, done
+
+
+# ==========================================
+# UI RENDERING
+# ==========================================
+
+# Header
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    st.markdown("<h1 style='text-align: center; color: white; margin-bottom: 0;'>✨ ALIVE</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: rgba(255,255,255,0.8); margin-top: 0;'>Your Intelligent Companion</p>", unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Main Layout
+left_col, right_col = st.columns([3, 2], gap="large")
+
+with left_col:
+    # Chat Interface
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    st.markdown("### 💬 Conversation")
+    
+    # Chat container
+    chat_container = st.container(height=500)
+    
+    with chat_container:
+        for msg in st.session_state.chat_history:
+            if msg['type'] == 'user':
+                st.markdown(f"<div class='user-message'>{msg['content']}</div>", unsafe_allow_html=True)
+            elif msg['type'] == 'ai':
+                st.markdown(f"<div class='ai-message'>{msg['content']}</div>", unsafe_allow_html=True)
+            elif msg['type'] == 'thinking':
+                st.markdown(f"<div class='ai-thinking'>{msg['content']}</div>", unsafe_allow_html=True)
+    
+    # Input
+    user_input = st.chat_input("Share your thoughts...")
+    
+    if user_input:
+        # Add user message
+        st.session_state.chat_history.append({
+            'type': 'user',
+            'content': user_input
+        })
+        
+        # Add thinking indicator
+        st.session_state.chat_history.append({
+            'type': 'thinking',
+            'content': 'thinking...'
+        })
+        st.rerun()
+    
+    # Process response after thinking
+    if st.session_state.chat_history and st.session_state.chat_history[-1]['type'] == 'thinking':
+        time.sleep(0.5)  # Brief pause for realism
+        st.session_state.chat_history.pop()  # Remove thinking indicator
+        
+        # Generate response
+        last_user_msg = [msg for msg in st.session_state.chat_history if msg['type'] == 'user'][-1]['content']
+        st.session_state.personality.process_input(last_user_msg)
+        response = st.session_state.personality.generate_response(last_user_msg)
+        
+        st.session_state.chat_history.append({
+            'type': 'ai',
+            'content': response
+        })
+        st.rerun()
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with right_col:
+    # World View
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    st.markdown("### 🌍 World View")
+    
+    # Create visualization
+    world_container = st.container()
+    
+    with world_container:
+        # Canvas
+        st.markdown("<div class='world-container'>", unsafe_allow_html=True)
+        
+        # Create grid
+        grid_size = 20
+        grid_width = 30
+        grid = [['·' for _ in range(grid_width)] for _ in range(grid_size)]
+        
+        # Plot agent
+        agent_y = int(st.session_state.agent.position[1] / 100 * (grid_size - 1))
+        agent_x = int(st.session_state.agent.position[0] / 100 * (grid_width - 1))
+        
+        # Plot target
+        target_y = int(st.session_state.agent.target_position[1] / 100 * (grid_size - 1))
+        target_x = int(st.session_state.agent.target_position[0] / 100 * (grid_width - 1))
+        
+        # Place markers
+        grid[target_y][target_x] = '★'
+        grid[agent_y][agent_x] = '●'
+        
+        # Render
+        grid_str = '\n'.join('  '.join(row) for row in grid)
+        st.code(grid_str, language=None)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Status cards
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col_a, col_b = st.columns(2)
+        
+        with col_a:
+            st.markdown(f"""
+            <div class='status-card'>
+                <div class='status-label'>Emotional State</div>
+                <div class='status-value'>{st.session_state.personality.get_emotional_summary()}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div class='status-card'>
+                <div class='status-label'>Energy</div>
+                <div class='status-value'>{st.session_state.agent.energy:.1f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with col_b:
+            st.markdown(f"""
+            <div class='status-card'>
+                <div class='status-label'>Learning Rate</div>
+                <div class='status-value'>{st.session_state.brain.epsilon:.3f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+            <div class='status-card'>
+                <div class='status-label'>Targets Found</div>
+                <div class='status-value'>{st.session_state.agent.targets_reached}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Controls
+    st.markdown("### ⚙️ Controls")
+    
+    # Autonomous mode toggle
+    st.session_state.autonomous_mode = st.toggle(
+        "Autonomous Learning", 
+        value=st.session_state.autonomous_mode,
+        help="When active, ALIVE will continuously explore its world to learn."
+    )
+
+    # New target button
+    if st.button("Give New Target", use_container_width=True):
+        st.session_state.agent.target_position = np.random.rand(2) * 100
+        st.session_state.agent.is_seeking = True
+        st.session_state.personality.emotional_state['curiosity'] = min(1.0, 
+            st.session_state.personality.emotional_state['curiosity'] + 0.2)
         st.rerun()
 
-with col_mind:
-    st.markdown("### 🧠 Cognitive Stream")
-    
-    # Inner Monologue
-    st.info(f"💭 {st.session_state.soul.internal_monologue}")
-    
-    # Chat History
-    history_box = st.container(height=250)
-    with history_box:
-        for line in st.session_state.soul.memory_stream[-10:]:
-            if line.startswith("User:"):
-                st.markdown(f"<div class='user-bubble'>{line}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div class='ai-bubble'>{line}</div>", unsafe_allow_html=True)
-    
-    # Chat Input
-    user_in = st.chat_input("Interface with A.L.I.V.E...")
-    if user_in:
-        st.session_state.soul.speak(user_in)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ==========================================
+# MAIN SIMULATION LOOP
+# ==========================================
+if st.session_state.autonomous_mode:
+    # Check if enough time has passed since the last update
+    current_time = time.time()
+    if current_time - st.session_state.last_update > 0.1: # 10 FPS
+        loss, td_error, done = simulation_step()
+        
+        if done:
+            # If target is reached, pause briefly and set a new one
+            time.sleep(1)
+            st.session_state.agent.target_position = np.random.rand(2) * 100
+            st.session_state.agent.is_seeking = True
+
+        st.session_state.last_update = current_time
         st.rerun()
-
-# --- Advanced Visualization (The "Mind Palace") ---
-with st.expander("🔬 View Neural Weights & Latent Activations"):
-    st.write("This visualizes the first layer of the World Model's Encoder.")
-    
-    # Visualize the first layer weights of the encoder
-    # Using our custom Tensor class to get data
-    weights = st.session_state.agent.world_model.encoder.layers[0].W.data
-    st.bar_chart(weights[:10].T) # Show first 10 neurons
-    
-    st.markdown("""
-    **Architecture Explanation:**
-    * **Encoder:** Compresses the 5D state (Pos, Target, Energy) into a 16D latent vector $z$.
-    * **World Model:** Predicts $z_{t+1}$ and Reward $r$ given current $z_t$ and action $a$.
-    * **Planner:** Used TD-MPC logic to simulate future steps in the latent space before moving.
-    """)
-
-# Footer
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: #555;'>PROJECT A.L.I.V.E. v6.0 | Built with Python & NumPy | 2025 Edition</div>", unsafe_allow_html=True)
