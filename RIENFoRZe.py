@@ -354,53 +354,88 @@ class WorldModel:
 
 class TDMPCAgent:
     def __init__(self):
-        # PRINCE NIK UPDATE: Reverting to the "Intelligent" 5D State
-        self.state_dim = 5  # AgentX, AgentY, TargetX, TargetY, Energy
+        self.state_dim = 5  
         self.action_dim = 4 
-        self.latent_dim = 48 # Keep the "Genius" size (v6 was 16)
-        self.horizon = 5     # We keep this for future potential
+        self.latent_dim = 48 
+        self.horizon = 5     
         
         self.world_model = WorldModel(self.state_dim, self.action_dim, self.latent_dim)
         
         self.memory = deque(maxlen=10000)
-        self.batch_size = 64 # Balanced batch size
+        self.batch_size = 64
         
-        # v6.0 Exploration Settings (Proven to work)
-        self.epsilon = 0.6 
-        self.epsilon_min = 0.05
+        # AGI PARAMETERS
+        self.epsilon = 0.4        # Lower exploration, trust the reflexes
+        self.epsilon_min = 0.01
         self.epsilon_decay = 0.995 
+        
+        # MEMORY STREAM for Stuck Detection
+        self.position_history = deque(maxlen=20) 
+        self.stuck_patience = 0
 
-    def act(self, state, mode='plan'):
+    def act(self, state, current_pos_real):
+        """
+        AGI Logic: Reflexes > Instinct > Planning
+        """
+        # 1. UPDATE SPATIAL MEMORY
+        self.position_history.append(current_pos_real.copy())
+        
+        # 2. STUCK DETECTION (The "Boredom" System)
+        is_stuck = False
+        if len(self.position_history) >= 10:
+            # Calculate how much we moved in last 10 steps
+            displacement = 0
+            for i in range(len(self.position_history)-1):
+                displacement += np.linalg.norm(self.position_history[i] - self.position_history[i+1])
+            
+            # If we moved less than 5 units in 10 steps, we are STUCK.
+            if displacement < 5.0:
+                is_stuck = True
+                self.stuck_patience += 1
+        
+        # 3. REFLEX OVERRIDE (The "Survival" System)
+        # If stuck, force a random move to break the loop
+        if is_stuck and self.stuck_patience > 5:
+            st.session_state.soul.internal_monologue = "⚠️ I am stuck. Initiating evasive maneuvers!"
+            self.stuck_patience = 0 # Reset
+            return random.randint(0, 3), []
+
+        # 4. EXPLORATION (Curiosity)
         if random.random() < self.epsilon:
             return random.randint(0, 3), []
         
-        state = state.reshape(1, -1)
-        z_root = self.world_model.encoder_forward_numpy(state)
+        # 5. TD-MPC PLANNING (The "Brain")
+        state_vec = state.reshape(1, -1)
+        z_root = self.world_model.encoder_forward_numpy(state_vec)
         
         best_action = 0
         max_return = -float('inf')
         
-        # v6.0 PLANNING LOGIC (Stable & Intelligent)
-        # Instead of guessing 5 steps blindly, we look 1 step ahead 
-        # and trust the "Value Function" (Intuition) for the rest.
         for action_idx in range(self.action_dim):
+            # REFLEX GUARD: Don't even consider actions that hit walls
+            # 0:Up, 1:Down, 2:Left, 3:Right
+            if action_idx == 0 and current_pos_real[1] <= 5: continue # Don't go Up if at Top
+            if action_idx == 1 and current_pos_real[1] >= 95: continue # Don't go Down if at Bottom
+            if action_idx == 2 and current_pos_real[0] <= 5: continue # Don't go Left if at Left
+            if action_idx == 3 and current_pos_real[0] >= 95: continue # Don't go Right if at Right
+            
+            # Imagine the outcome
             a_vec = np.zeros((1, self.action_dim))
             a_vec[0, action_idx] = 1.0
             
-            # Predict immediate future
             z_next, r_pred = self.world_model.predict(z_root, a_vec)
-            
-            # r_pred is the immediate reward
-            # v_next is the "gut feeling" of how good the next state is
             v_next = self.world_model.value_forward_numpy(z_next)
-            
-            # Q(s,a) = r + V(s')
-            expected_return = r_pred[0,0] + 0.95 * v_next[0,0]
+            expected_return = r_pred[0,0] + 0.98 * v_next[0,0] # Higher gamma for long-term thinking
             
             if expected_return > max_return:
                 max_return = expected_return
                 best_action = action_idx
         
+        # Final Safety Check (If the Brain picked a bad move anyway)
+        if max_return == -float('inf'):
+            # If all moves were blocked by Reflex Guard, pick any valid one
+            best_action = random.randint(0, 3)
+
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
@@ -559,8 +594,7 @@ def reset_sim():
     st.toast("Simulation Reset. Memory Wiped.", icon="🧹")
 
 def step_environment():
-    # PRINCE NIK UPDATE: v6.0 State Representation (Normalized)
-    # This is much easier for the AI to understand.
+    # 5D State Vector
     state = np.array([
         st.session_state.pos[0]/100.0,
         st.session_state.pos[1]/100.0,
@@ -569,52 +603,60 @@ def step_environment():
         st.session_state.soul.energy/100.0
     ])
     
-    # Check for "Laziness" (Did it stay in the same spot?)
-    prev_pos = st.session_state.pos.copy()
-    
-    action_idx, _ = st.session_state.agent.act(state)
+    # PRINCE NIK UPDATE: Pass 'pos' to act() for Reflexes
+    action_idx, _ = st.session_state.agent.act(state, st.session_state.pos)
     
     move_vec = np.array([0.0, 0.0])
-    speed = 5.0 # Slightly faster than v6
+    speed = 6.0 # Fast movement
     
-    if action_idx == 0: move_vec[1] = -speed # Up
-    elif action_idx == 1: move_vec[1] = speed  # Down
-    elif action_idx == 2: move_vec[0] = -speed # Left
-    elif action_idx == 3: move_vec[0] = speed  # Right
+    if action_idx == 0: move_vec[1] = -speed # UP
+    elif action_idx == 1: move_vec[1] = speed  # DOWN
+    elif action_idx == 2: move_vec[0] = -speed # LEFT
+    elif action_idx == 3: move_vec[0] = speed  # RIGHT
     
     prev_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
+    # Apply Move
     st.session_state.pos += move_vec
     
-    # --- Wall Collision Logic (Keep v7 Safety) ---
+    # WALL COLLISION PHYSICS
     hit_wall = False
-    if st.session_state.pos[0] < 2: st.session_state.pos[0] = 2; hit_wall = True
-    if st.session_state.pos[0] > 98: st.session_state.pos[0] = 98; hit_wall = True
-    if st.session_state.pos[1] < 2: st.session_state.pos[1] = 2; hit_wall = True
-    if st.session_state.pos[1] > 98: st.session_state.pos[1] = 98; hit_wall = True
-    
+    if st.session_state.pos[0] < 2: 
+        st.session_state.pos[0] = 2
+        hit_wall = True
+    if st.session_state.pos[0] > 98: 
+        st.session_state.pos[0] = 98
+        hit_wall = True
+    if st.session_state.pos[1] < 2: 
+        st.session_state.pos[1] = 2
+        hit_wall = True
+    if st.session_state.pos[1] > 98: 
+        st.session_state.pos[1] = 98
+        hit_wall = True
+        
     curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
-    # PRINCE NIK UPDATE: v6.0 Reward Structure (Stable)
-    # Multiplier 2.0 is smoother than 50.0
-    reward = (prev_dist - curr_dist) * 2.0 
+    # REWARD ENGINEERING
+    # 1. Improvement Reward
+    reward = (prev_dist - curr_dist) * 5.0
     
+    # 2. Wall Pain (Negative Reward)
     if hit_wall:
-        reward -= 10.0 # Punish hitting walls
-    
+        reward -= 200.0 # Massive pain. "Don't touch the stove!"
+        st.session_state.soul.current_mood = "Confused"
+        
+    # 3. Target Capture
     done = False
-    
     if curr_dist < 6.0:
-        reward = 50.0 # Big win
+        reward = 500.0 # Massive pleasure
         done = True
         st.session_state.wins += 1
         st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
         st.session_state.soul.energy = 100
-        st.toast("🎯 TARGET ACQUIRED! Intelligence: RESTORED", icon="⚡")
+        st.toast("⚡ TARGET ACQUIRED! AGI OPTIMIZED.", icon="🧠")
     else:
-        reward -= 0.1 # Living cost
+        reward -= 1.0 # "Cost of Living" - encourages speed
     
-    # Next State
     next_state = np.array([
         st.session_state.pos[0]/100.0,
         st.session_state.pos[1]/100.0,
@@ -625,18 +667,16 @@ def step_environment():
     
     st.session_state.agent.remember(state, action_idx, reward, next_state, done)
     
-    # Hyper-Learning (Keep v7 Speed)
+    # Hyper-Learning
     total_loss = 0
-    for _ in range(5):
+    for _ in range(8): # Train 8 times per step (Genius needs study)
         total_loss += st.session_state.agent.replay()
     
-    avg_loss = total_loss / 5.0
+    avg_loss = total_loss / 8.0
     st.session_state.soul.perceive(avg_loss, reward)
     st.session_state.steps += 1
     if avg_loss > 0:
         st.session_state.loss_history.append(avg_loss)
-        if len(st.session_state.loss_history) > 50: st.session_state.loss_history.pop(0)
-
 # ==========================================
 # 6. UI RENDERING
 # ==========================================
