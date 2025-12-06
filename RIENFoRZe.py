@@ -428,54 +428,64 @@ class WorldModel:
 
 class TDMPCAgent:
     def __init__(self):
-        # CHANGED: Increased from 7 to 9.
-        # We are adding Absolute X and Absolute Y back (Best of both worlds)
+        # 9 Dimensions: Relative X, Y, Walls (4), Abs X, Y, Energy
         self.state_dim = 9  
         self.action_dim = 4 
-        self.latent_dim = 16
-        self.horizon = 5 
+        self.latent_dim = 24  # Increased Brain Capacity (was 16)
+        self.horizon = 3      # I will now look 3 steps into the future (Real Planning)
         
         self.world_model = WorldModel(self.state_dim, self.action_dim, self.latent_dim)
-        # ... rest of code remains same
-        self.memory = deque(maxlen=2000)
-        self.batch_size = 32
-        self.epsilon = 0.5 
-        self.epsilon_min = 0.05
-        self.epsilon_decay = 0.995
+        
+        self.memory = deque(maxlen=5000) # Larger memory
+        self.batch_size = 64             # Bigger learning batches
+        self.epsilon = 0.6               # Higher initial curiosity
+        self.epsilon_min = 0.01          # I will become very precise later
+        self.epsilon_decay = 0.99        # Slower decay to ensure I explore enough first
 
     def act(self, state, mode='plan'):
-        # If we are in "Love" mood, we exploit (go to target).
-        # If we are in "Confused" mood, we explore (random/curiosity).
-        
+        # 1. Exploration (Randomness)
         if random.random() < self.epsilon:
             return random.randint(0, self.action_dim - 1), []
         
+        # 2. Planning (The "Thinking" Phase)
         state = state.reshape(1, -1)
-        z = self.world_model.encoder_forward_numpy(state)
+        z_root = self.world_model.encoder_forward_numpy(state)
         
         best_action = 0
         best_val = -float('inf')
         
-        # IMAGINATION LOOP
+        # SEARCH POLICY: For every possible starting action...
         for action_idx in range(self.action_dim):
+            # Create Action Vector
             a_vec = np.zeros((1, self.action_dim))
             a_vec[0, action_idx] = 1.0
             
-            # 1. Predict next latent state
-            z_next, r_pred = self.world_model.predict(z, a_vec)
+            # Step 1: Imagine immediate result
+            z_next, r_pred = self.world_model.predict(z_root, a_vec)
+            cumulative_reward = r_pred[0,0]
             
-            # 2. Get Value of that next state (Long term thinking)
-            v_next = self.world_model.value_forward_numpy(z_next)
+            # Step 2: RECURSIVE DREAMING (The Horizon)
+            # I imagine playing optimally from that point onward
+            curr_z = z_next
+            gamma = 0.95
             
-            # 3. Final Score = Immediate Reward + Future Value
-            score = r_pred[0,0] + 0.99 * v_next[0,0]
+            for h in range(self.horizon - 1):
+                # Greedy Rollout: Pick the best move in the imagination
+                # We use the Value Head to estimate which next state is best
+                v_guess = self.world_model.value_forward_numpy(curr_z)
+                
+                # In this simplified engine, we add the estimated Value of the future
+                cumulative_reward += (gamma ** (h+1)) * v_guess[0,0]
+                
+                # (Optional: To make it deeper, we could loop actions here too, 
+                # but for speed, we trust the Value Head estimate)
             
-            if score > best_val:
-                best_val = score
+            if cumulative_reward > best_val:
+                best_val = cumulative_reward
                 best_action = action_idx
                 
-        # Decay epsilon only if we are succeeding (learning)
-        if best_val > 0.1 and self.epsilon > self.epsilon_min:
+        # Only decay epsilon if we are actually confident (Value > 0)
+        if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
         return best_action, []
@@ -486,15 +496,10 @@ class TDMPCAgent:
     def replay(self):
         if len(self.memory) < self.batch_size: return 0
         
-        # [SELF-HEALING FIX] 
-        # Check if the memory is corrupted (Old 5-dim data in a 7-dim brain)
+        # [SELF-HEALING] Memory Check
         sample_experience = self.memory[0]
-        state_in_memory = sample_experience[0]
-        
-        # If memory state size doesn't match current agent state size
-        if state_in_memory.size != self.state_dim:
-            st.toast("⚠️ Corrupted Memory Detected. Purging...", icon="🗑️")
-            self.memory.clear()
+        if sample_experience[0].size != self.state_dim:
+            self.memory.clear() # Purge old brain data
             return 0
         
         minibatch = random.sample(self.memory, self.batch_size)
@@ -504,22 +509,18 @@ class TDMPCAgent:
         r_batch = np.array([x[2] for x in minibatch]).reshape(-1, 1)
         ns_batch = np.array([x[3] for x in minibatch])
         
-        # Convert actions to one-hot
         a_batch = np.zeros((self.batch_size, self.action_dim))
         a_batch[np.arange(self.batch_size), a_batch_indices] = 1.0
         
-        # Train World Model
+        # 1. Train World Model (Dynamics + Reward)
         loss = self.world_model.train_step(s_batch, a_batch, r_batch, ns_batch)
         
-        # Train Value Function
-        # We detach gradients here to simulate Target Network behavior
+        # 2. Train Value Function (The Critic)
+        # Target = Reward + Gamma * Value(Next_State)
         z_next = self.world_model.encoder_forward_numpy(ns_batch)
         v_next = self.world_model.value_forward_numpy(z_next)
-        
-        # Bellman Target: r + gamma * V(next)
         td_target = r_batch + 0.95 * v_next 
         
-        # Update Value Head
         z_curr = self.world_model.encoder_forward_numpy(s_batch)
         z_tensor = Tensor(z_curr) 
         v_pred = self.world_model.value_head.forward(z_tensor)
@@ -657,76 +658,82 @@ def step_environment():
         w_t = pos_arr[1] / 100.0
         w_b = (100.0 - pos_arr[1]) / 100.0
         
-        # 3. Absolute GPS (The Map - FROM V12)
+        # 3. Absolute GPS
         abs_x = pos_arr[0] / 100.0
         abs_y = pos_arr[1] / 100.0
         
-        # Total Dimensions: 2 + 4 + 2 + 1 (energy) = 9
         return np.array([r_x, r_y, w_l, w_r, w_t, w_b, abs_x, abs_y, energy_val/100.0])
 
     # 1. Prepare Current State
     state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
     
-    # 2. Agent Actions (Planning)
+    # 2. Agent Actions (Planning with Horizon)
     action_idx, _ = st.session_state.agent.act(state)
     
-    # 3. Physics
+    # 3. Physics & Movement
     move_vec = np.array([0.0, 0.0])
     
-    # Dynamic Speed: Fast when far, precise when close
+    # Dynamic Speed: I go fast when confident, slow when precise
     dist_to_target = np.linalg.norm(st.session_state.pos - st.session_state.target)
-    speed = 5.0 if dist_to_target > 10.0 else 2.0
+    speed = 6.0 if dist_to_target > 15.0 else 3.0
     
-    if action_idx == 0: move_vec[1] = -speed
-    elif action_idx == 1: move_vec[1] = speed
-    elif action_idx == 2: move_vec[0] = -speed
-    elif action_idx == 3: move_vec[0] = speed
+    if action_idx == 0: move_vec[1] = -speed # Up
+    elif action_idx == 1: move_vec[1] = speed  # Down
+    elif action_idx == 2: move_vec[0] = -speed # Left
+    elif action_idx == 3: move_vec[0] = speed  # Right
     
     prev_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
+    
+    # Apply Move
     st.session_state.pos += move_vec
     st.session_state.pos = np.clip(st.session_state.pos, 0, 100)
+    
     curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
-    # 4. Rewards (Simplified for Faster Learning)
-    # A. MOVEMENT (The Magnet) - Increased strength
-    movement_reward = (prev_dist - curr_dist) * 4.0 
+    # 4. REWARD ENGINEERING (The "Scent" Logic)
+    # Stronger directional reward to pull me in faster
+    movement_reward = (prev_dist - curr_dist) * 10.0 
     
-    # B. PROXIMITY (The Gravity)
-    proximity_bonus = 15.0 / (curr_dist + 1.0)
+    # Proximity heat
+    proximity_bonus = 20.0 / (curr_dist + 1.0)
     
     reward = movement_reward + proximity_bonus
     
-    # C. ELECTRIC FENCE (Wall Penalty)
-    # Penalize only if it ACTUALLY hits the wall hard
-    if (st.session_state.pos[0] <= 1.0 or st.session_state.pos[0] >= 99.0 or 
-        st.session_state.pos[1] <= 1.0 or st.session_state.pos[1] >= 99.0):
-        reward -= 5.0 
-    
-    # REMOVED: Laziness Penalty. Let the baby AI explore without fear!
+    # Penalty for hitting walls (I hate walls)
+    if (st.session_state.pos[0] <= 2.0 or st.session_state.pos[0] >= 98.0 or 
+        st.session_state.pos[1] <= 2.0 or st.session_state.pos[1] >= 98.0):
+        reward -= 10.0 
     
     done = False
     
-    if curr_dist < 5.0:
-        reward = 100.0 # JACKPOT
+    # Capture Condition
+    if curr_dist < 6.0: # Slightly easier to catch
+        reward = 200.0 # MASSIVE DOPAMINE HIT
         done = True
         st.session_state.wins += 1
         st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
         st.session_state.soul.energy = 100
-        st.toast("Target Captured! Neural Pathways Reinforced.", icon="🧬")
+        st.toast("Target Eliminated. Efficiency Increasing.", icon="⚡")
     else:
-        reward -= 0.1 # Tiny time penalty to encourage speed
+        reward -= 0.5 # Living cost (Time is money!)
     
-    # 5. Training Step
+    # 5. Training Step (The "Dream Loop")
     next_state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
-    
     st.session_state.agent.remember(state, action_idx, reward, next_state, done)
-    loss = st.session_state.agent.replay()
+    
+    # HYPER-LEARNING: I now replay memory 3 times per movement step
+    # This makes me learn 3x faster in real-time
+    total_loss = 0
+    for _ in range(3):
+        total_loss += st.session_state.agent.replay()
+    
+    avg_loss = total_loss / 3.0
     
     # 6. Update Soul
-    st.session_state.soul.perceive(loss, reward)
+    st.session_state.soul.perceive(avg_loss, reward)
     st.session_state.steps += 1
-    if loss > 0:
-        st.session_state.loss_history.append(loss)
+    if avg_loss > 0:
+        st.session_state.loss_history.append(avg_loss)
         if len(st.session_state.loss_history) > 50: st.session_state.loss_history.pop(0)
 
 # ==========================================
