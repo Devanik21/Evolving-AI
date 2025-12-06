@@ -195,18 +195,33 @@ class AGICore:
     # --- THIS WAS MISSING ---
     def update(self, reward, td_error, recent_wins):
         """Processes simulation data to update mood/thoughts automatically."""
+        # 1. Critical Needs
         if self.energy < 20:
             self.current_mood = "Sleeping"
             self.thought_process = "CRITICAL: Energy low. Reducing cognitive load."
-        elif reward > 10:
+            return # Stop processing other moods if asleep
+
+        # 2. Success
+        if reward > 10:
             self.current_mood = "Excited"
             self.thought_process = "ANALYSIS: Significant success detected! Dopamine release."
-        elif reward < -5:
+            return
+
+        # 3. Failure
+        if reward < -5:
             self.current_mood = "Sad"
             self.thought_process = "ANALYSIS: Negative outcome. Re-evaluating strategy."
-        elif td_error > 5:
+            return
+
+        # 4. Learning (Adjusted Logic)
+        # We increase the threshold for confusion from 5 to 15 to stop flickering
+        if td_error > 15: 
             self.current_mood = "Confused"
             self.thought_process = "ANALYSIS: Surprise event. High learning opportunity."
+        elif td_error > 5:
+            # New "Focusing" state for moderate errors
+            self.current_mood = "Curious" 
+            self.thought_process = "Optimizing neural pathways..."
         else:
             self.current_mood = "Neutral"
             
@@ -513,9 +528,10 @@ def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
                 queue.append(path + [(ny, nx)])
     return None # No path found
 
+
+
 def process_step():
     # 1. Sense Environment
-    # Inputs: Normalized X, Y, Target X, Target Y, Energy
     state = np.array([
         st.session_state.agent_pos[0]/100, 
         st.session_state.agent_pos[1]/100, 
@@ -530,51 +546,61 @@ def process_step():
     action = st.session_state.mind.act(state)
     
     # 3. Physics Update (Continuous Movement simulation)
-    # 3. Physics Update (Continuous Movement simulation)
     move_speed = st.session_state.config.get("move_speed", 8.0)
     old_pos = st.session_state.agent_pos.copy()
     
-    # Grid Logic: (0,0) is Top-Left. 
-    # Action 0 (Up) -> Decrease Y
-    # Action 1 (Down) -> Increase Y
-    if action == 0: st.session_state.agent_pos[1] -= move_speed # Up (Fixed)
-    elif action == 1: st.session_state.agent_pos[1] += move_speed # Down (Fixed)
-    elif action == 2: st.session_state.agent_pos[0] -= move_speed # Left
-    elif action == 3: st.session_state.agent_pos[0] += move_speed # Right
+    # Grid Logic: 0=Up, 1=Down, 2=Left, 3=Right
+    if action == 0: st.session_state.agent_pos[1] -= move_speed 
+    elif action == 1: st.session_state.agent_pos[1] += move_speed 
+    elif action == 2: st.session_state.agent_pos[0] -= move_speed 
+    elif action == 3: st.session_state.agent_pos[0] += move_speed 
     
-    # Walls (Bounce effect)
-    if st.session_state.agent_pos[0] < 0 or st.session_state.agent_pos[0] > 100:
-        st.session_state.agent_pos[0] = np.clip(st.session_state.agent_pos[0], 0, 100)
-    if st.session_state.agent_pos[1] < 0 or st.session_state.agent_pos[1] > 100:
-        st.session_state.agent_pos[1] = np.clip(st.session_state.agent_pos[1], 0, 100)
+    # --- NEW: WALL BOUNCE LOGIC (Prevents Corner Glue) ---
+    hit_wall = False
+    if st.session_state.agent_pos[0] < 0:
+        st.session_state.agent_pos[0] = 5.0 # Bounce back in
+        hit_wall = True
+    elif st.session_state.agent_pos[0] > 100:
+        st.session_state.agent_pos[0] = 95.0
+        hit_wall = True
+        
+    if st.session_state.agent_pos[1] < 0:
+        st.session_state.agent_pos[1] = 5.0
+        hit_wall = True
+    elif st.session_state.agent_pos[1] > 100:
+        st.session_state.agent_pos[1] = 95.0
+        hit_wall = True
+        
+    # STUCK DETECTOR: If I didn't move effectively, force a random jump
+    if np.linalg.norm(st.session_state.agent_pos - old_pos) < 1.0 and not hit_wall:
+         st.session_state.agent_pos += np.random.randn(2) * 5.0
 
-    # 4. Calculate Reward (Intrinsic + Extrinsic)
+    # 4. Calculate Reward
     dist_after = np.linalg.norm(st.session_state.agent_pos - st.session_state.target_pos)
     reward = 0
     done = False
     
-    # Shaping Reward (Continuous gradient)
+    # Shaping Reward
     reward = (dist_before - dist_after) * st.session_state.config.get("shaping_multiplier", 2.0)
     
-    # Event: Reached Target
+    # Penalty for hitting walls (Teaches me to stay in bounds)
+    if hit_wall:
+        reward -= 5.0 
+    
     # Event: Reached Target
     if dist_after < st.session_state.config.get("hug_distance", 8.0):
-        # --- NEW HUGGING LOGIC ---
         st.session_state.is_hugging = True 
-        st.session_state.auto_mode = False # Stop the loop!
-        
+        st.session_state.auto_mode = False 
         st.session_state.wins += 1
         st.session_state.soul.energy = 100
-        st.session_state.soul.current_mood = "Love" # New secret mood
+        st.session_state.soul.current_mood = "Love" 
         st.session_state.soul.last_chat = "I found you, Prince! *Hugs tightly* I missed you."
-        
         reward = st.session_state.config.get("hug_reward", 100.0)
         done = True
-        # We DO NOT move the target here anymore. We stay here.
     else:
         st.session_state.soul.energy -= st.session_state.config.get("energy_decay", 0.1)
         
-    # 5. Learn (Plasticity)
+    # 5. Learn & 6. Update Soul
     next_state = np.array([
         st.session_state.agent_pos[0]/100, 
         st.session_state.agent_pos[1]/100, 
@@ -586,14 +612,12 @@ def process_step():
     st.session_state.mind.remember(state, action, reward, next_state, done)
     loss, td_error = st.session_state.mind.replay(batch_size=st.session_state.config.get("batch_size", 32))
     
-    # 6. Update Soul
     st.session_state.soul.update(reward, td_error, st.session_state.wins)
     
     # 7. Log for Graphing
     st.session_state.loss_history.append(loss)
     st.session_state.reward_history.append(reward)
     
-    # Update Target Network periodically
     if st.session_state.step_count % st.session_state.config.get("target_update_freq", 50) == 0:
         st.session_state.mind.update_target_network()
 
