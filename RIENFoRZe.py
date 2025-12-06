@@ -420,7 +420,7 @@ class TDMPCAgent:
     def __init__(self):
         # CHANGED: Increased from 7 to 9.
         # We are adding Absolute X and Absolute Y back (Best of both worlds)
-        self.state_dim = 9  
+        self.state_dim = 7  
         self.action_dim = 4 
         self.latent_dim = 16
         self.horizon = 5 
