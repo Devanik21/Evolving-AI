@@ -121,14 +121,10 @@ st.markdown("""
 # I am building a custom neural engine here to keep this pure Python/NumPy
 # This simulates how PyTorch works under the hood. Educational & Complex.
 
-# ==========================================
-# 2. THE "ENGINE" (Manual Autograd for NumPy)
-# ==========================================
 class Tensor:
     """A wrapper around NumPy arrays to handle gradients."""
     def __init__(self, data, requires_grad=False):
         self.data = np.array(data, dtype=np.float32)
-        # Initialize grad as zeros of the same shape as data
         self.grad = np.zeros_like(self.data) if requires_grad else None
         self.requires_grad = requires_grad
         self.parents = [] # For backprop graph
@@ -139,24 +135,6 @@ class Tensor:
         if grad is None:
             grad = np.ones_like(self.data)
         
-        # --- CRITICAL FIX: ROBUST SHAPE HANDLING ---
-        # The gradient (grad) coming back might be from a batch (e.g., 32, 32)
-        # but this Tensor might be a bias vector (e.g., 1, 32).
-        # We must sum across the batch dimension (axis 0) if shapes mismatch.
-        
-        if self.grad.shape != grad.shape:
-            # Case 1: Batch Broadcast (e.g., grad is (32, 32), self is (1, 32))
-            if grad.ndim == self.grad.ndim and grad.shape[0] > self.grad.shape[0]:
-                grad = np.sum(grad, axis=0, keepdims=True)
-            
-            # Case 2: Squeeze/Reshape issues (Safe fallback)
-            if self.grad.shape != grad.shape:
-                try:
-                    grad = grad.reshape(self.grad.shape)
-                except ValueError:
-                    # If direct reshape fails, force summation on axis 0 as last resort
-                     grad = np.sum(grad, axis=0, keepdims=True)
-
         # Accumulate gradient
         self.grad += grad
         
@@ -186,18 +164,13 @@ class Tensor:
         return out
 
     def add(self, other):
-        """
-        Modified to handle Bias Broadcasting safely.
-        """
         out_data = self.data + other.data
         out = Tensor(out_data, requires_grad=self.requires_grad or other.requires_grad)
         
-        # The logic is now handled robustly in backward(), so we can keep these simple
-        def grad_fn_self(g): return g
-        def grad_fn_other(g): return g
+        def grad_fn_common(g): return g # Gradient flows equally
         
-        if self.requires_grad: out.parents.append((self, grad_fn_self))
-        if other.requires_grad: out.parents.append((other, grad_fn_other))
+        if self.requires_grad: out.parents.append((self, grad_fn_common))
+        if other.requires_grad: out.parents.append((other, grad_fn_common))
         return out
 
     def relu(self):
@@ -218,7 +191,6 @@ class Tensor:
         out = Tensor(loss_val, requires_grad=self.requires_grad)
         
         def grad_fn(g):
-            # Ensure scalar gradient 'g' is broadcast correctly
             return g * (2 * diff) / diff.size
             
         if self.requires_grad: out.parents.append((self, grad_fn))
@@ -294,6 +266,7 @@ class WorldModel:
         ])
         
         # 2. Dynamics (Latent + Action -> Next Latent)
+        # We concatenate Action to Latent
         self.dynamics = Network([
             Dense(latent_dim + action_dim, 32),
             Dense(32, latent_dim)
@@ -319,13 +292,10 @@ class WorldModel:
         )
         self.opt = Optimizer(self.all_params, lr=0.005)
 
-    def predict(self, z, action_one_hot):
-        """
-        Forward pass for PLANNING (Inference).
-        FIX: Takes latent 'z' as input, NOT raw state.
-        """
-        # We skip the encoder here because we are imagining future steps
-        # inside the latent space directly.
+    def predict(self, state, action_one_hot):
+        """Forward pass for inference/planning."""
+        # Note: We work with Tensors for training, but raw numpy for fast inference loops
+        z = self.encoder_forward_numpy(state)
         next_z = self.dynamics_forward_numpy(z, action_one_hot)
         r = self.reward_forward_numpy(z, action_one_hot)
         return next_z, r
@@ -354,10 +324,7 @@ class WorldModel:
         for l in self.reward_head.layers:
              if isinstance(l, Dense):
                 x = np.dot(x, l.W.data) + l.b.data
-                # Fix: The last layer of reward head shouldn't strictly be ReLU 
-                # to allow negative rewards, but for stability we keep hidden relu
-                if l is not self.reward_head.layers[-1]: 
-                    x = np.maximum(0, x)
+                if l is not self.reward_head.layers[-1]: x = np.maximum(0, x)
         return x
     
     def value_forward_numpy(self, z):
@@ -369,46 +336,55 @@ class WorldModel:
         return x
 
     def train_step(self, states, actions, rewards, next_states):
-        """Self-Supervised Learning Step."""
+        """
+        Self-Supervised Learning Step.
+        The model tries to predict:
+        1. Next Latent State (Consistency)
+        2. Immediate Reward
+        """
         # Wrap in Tensors
         s = Tensor(states)
         a = Tensor(actions)
         r_target = Tensor(rewards)
-        # We use the encoder on next_state as target (Consistency Loss)
-        target_z_numpy = self.encoder_forward_numpy(next_states)
-        target_z_t = Tensor(target_z_numpy)
+        ns_target = Tensor(next_states) # We use the encoder on next_state as target
         
         # 1. Encode current state
         z = self.encoder.forward(s)
         
-        # 2. Dynamics Pass (Manual Concat for Autograd)
-        # We combine data manually to keep the graph simple for this custom engine
-        dyn_in_data = np.concatenate([z.data, a.data], axis=1)
+        # 2. Predict next z and reward
+        # Concat z and a
+        # (Implementing concat in our mini-autograd is hard, so we do it via data manipulation and create new leaf tensors, 
+        # breaking the graph slightly for simplicity, or we treat z and a as separate inputs to the first layer. 
+        # For this demo, we assume the first layer of dynamics expects the concatenated size).
         
-        # NOTE: In a real framework (PyTorch), we would concatenate Tensors.
-        # Here, to keep gradients flowing from Dynamics to Encoder, we need
-        # to hack our custom Tensor class or just rely on 1-step gradients.
-        # For this student project, we will create a new Tensor that connects back.
-        dyn_in = Tensor(dyn_in_data, requires_grad=True)
-        # (Advanced: In this simple engine, gradients won't flow back to 'z' 
-        # seamlessly due to the numpy concat, but it works for 1-step training).
+        # Manual concat for Autograd
+        # We will cheat slightly and just do the forward pass logic:
+        
+        # Dynamics Pass
+        dyn_in_data = np.concatenate([z.data, a.data], axis=1)
+        dyn_in = Tensor(dyn_in_data, requires_grad=True) 
+        # Note: We lose gradient flow back to Encoder here for simplicity in this 700-line limit. 
+        # In full TD-MPC, we backprop through time. Here we do 1-step consistency.
         
         z_pred = self.dynamics.forward(dyn_in)
         r_pred = self.reward_head.forward(dyn_in)
         
-        # 3. Losses
+        # 3. Target for z_pred is Encoder(next_state)
+        # We detach the target encoder to prevent collapse
+        target_z = self.encoder_forward_numpy(next_states)
+        target_z_t = Tensor(target_z)
+        
+        # 4. Losses
         loss_dynamics = z_pred.mse(target_z_t)
         loss_reward = r_pred.mse(r_target)
         
         total_loss = loss_dynamics.add(loss_reward)
         
-        # 4. Update
+        # 5. Update
         total_loss.backward()
         self.opt.step()
         
         return total_loss.data
-
-
 
 class TDMPCAgent:
     def __init__(self):
@@ -425,34 +401,50 @@ class TDMPCAgent:
         self.epsilon_decay = 0.995
 
     def act(self, state, mode='plan'):
+        """
+        The 'Plan' mode is where TD-MPC shines. 
+        It doesn't just look up Q-values. It simulates sequences.
+        """
         if random.random() < self.epsilon:
             return random.randint(0, self.action_dim - 1), []
         
-        # Ensure state is (1, 5)
         state = state.reshape(1, -1)
         
-        # 1. Encode State to Latent (This is correct)
-        # shape: (1, 16)
+        # 1. Encode State
         z = self.world_model.encoder_forward_numpy(state)
         
         best_action = 0
         max_return = -float('inf')
-        imagined_path = [] 
+        imagined_path = [] # For visualization
         
-        # 2. TD-MPC Planning Loop
+        # MPC: Evaluate each discrete action by rolling out H steps
+        # In continuous TD-MPC (MPPI), we sample thousands of trajectories.
+        # In discrete, we can do a beam search or simple 1-step lookahead + Value function.
+        # Here we do: Expand all 4 actions, then roll out greedily for H-1 steps.
+        
         for action_idx in range(self.action_dim):
             # One-hot action
             a_vec = np.zeros((1, self.action_dim))
             a_vec[0, action_idx] = 1.0
             
             # Step 1: Imagination
-            # We pass 'z' (latent), not 'state'
             z_next, r_pred = self.world_model.predict(z, a_vec)
             cumulative_reward = r_pred[0,0]
             
-            # Heuristic for the rest of the horizon
-            v = self.world_model.value_forward_numpy(z_next)
-            cumulative_reward += v[0,0]
+            current_z = z_next
+            path_segment = []
+            
+            # Rollout H steps (Greedy Strategy in Latent Space)
+            for h in range(self.horizon):
+                # Choose best action based on Value Function at this imagined state
+                # Or just random rollout for simplicity.
+                # Let's use the Value Head to estimate remaining return
+                v = self.world_model.value_forward_numpy(current_z)
+                
+                # In full TD-MPC, we optimize the sequence. 
+                # Here we use the Value function as the heuristic for the rest.
+                cumulative_reward += (0.9 ** h) * v[0,0]
+                break # For this lite version, we effectively do 1-step + Value
             
             if cumulative_reward > max_return:
                 max_return = cumulative_reward
@@ -484,22 +476,21 @@ class TDMPCAgent:
         # Train World Model
         loss = self.world_model.train_step(s_batch, a_batch, r_batch, ns_batch)
         
-        # Train Value Function
-        # We detach gradients here to simulate Target Network behavior
-        z_next = self.world_model.encoder_forward_numpy(ns_batch)
-        v_next = self.world_model.value_forward_numpy(z_next)
-        
-        # Bellman Target: r + gamma * V(next)
-        td_target = r_batch + 0.95 * v_next 
-        
-        # Update Value Head
-        z_curr = self.world_model.encoder_forward_numpy(s_batch)
-        z_tensor = Tensor(z_curr) 
-        v_pred = self.world_model.value_head.forward(z_tensor)
-        
-        v_loss = v_pred.mse(Tensor(td_target))
-        v_loss.backward()
-        self.world_model.opt.step()
+        # Train Value Function (Bellman Update on Latent Space)
+        # Target = r + gamma * V(next_z)
+        with np.errstate(all='ignore'): # Suppress numpy warnings during manual backprop
+            z_next = self.world_model.encoder_forward_numpy(ns_batch)
+            v_next = self.world_model.value_forward_numpy(z_next)
+            td_target = r_batch + 0.95 * v_next # Simple bootstrapping
+            
+            # Update Value Head
+            z_curr = self.world_model.encoder_forward_numpy(s_batch)
+            z_tensor = Tensor(z_curr) # Treat latent as fixed input
+            v_pred = self.world_model.value_head.forward(z_tensor)
+            
+            v_loss = v_pred.mse(Tensor(td_target))
+            v_loss.backward()
+            self.world_model.opt.step() # Updates value head weights
         
         return loss
 
@@ -690,43 +681,88 @@ c4.markdown(f"<div class='hud-box'><h3>LOSS</h3><h2 style='text-align:center'>{s
 col_sim, col_mind = st.columns([2, 1])
 
 with col_sim:
-    st.markdown("### 🔭 Latent World Simulation") # Correct st.markdown usage
+    st.markdown("### 🔭 Latent World Simulation")
     
-    # 1. Get Coordinates & Stats
+    # We draw the grid using standard HTML/CSS for speed and looks
+    # Normalize positions to percentages
     ax, ay = st.session_state.pos[0], st.session_state.pos[1]
     tx, ty = st.session_state.target[0], st.session_state.target[1]
-    # Use .get() safely in case 'current_mood' isn't set
-    mood_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, '❤️') 
-
-    # 2. Build the HTML String with triple quotes
-    # 2. Build the HTML String (The "Matrix")
-    # FIX: We compress the HTML into single lines to prevent "Code Block" detection.
-    html_grid = f"""
-<div style="position: relative; width: 100%; height: 400px; background-color: #0f0f1e; border: 2px solid #00d2ff; border-radius: 10px; overflow: hidden; margin-bottom: 20px; background-image: linear-gradient(rgba(0, 210, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 210, 255, 0.1) 1px, transparent 1px); background-size: 20px 20px;">
-    <div style="position: absolute; left: {ax}%; top: {ay}%; width: 40px; height: 40px; background: rgba(0, 210, 255, 0.2); border: 2px solid #00d2ff; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 20px #00d2ff; display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 10; transition: all 0.2s ease-out;">{mood_icon}</div>
-    <div style="position: absolute; left: {tx}%; top: {ty}%; width: 25px; height: 25px; background: #ff0055; transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 15px #ff0055; z-index: 5; animation: targetPulse 1s infinite;"></div>
-    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.05) 50%); background-size: 100% 4px; pointer-events: none; z-index: 20;"></div>
-    <style>@keyframes targetPulse {{ 0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }} 50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.3); opacity: 0.8; }} 100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }} }}</style>
-</div>
-"""
-
-    # 3. RENDER IT
-    st.markdown(html_grid, unsafe_allow_html=True)
-
     
-    # 4. Controls
+    html_grid = f"""
+    <div style="
+        position: relative;
+        width: 100%;
+        height: 400px;
+        background-color: #0f0f1e;
+        border: 2px solid #00d2ff;
+        border-radius: 10px;
+        overflow: hidden;
+        background-image: 
+            linear-gradient(rgba(0, 210, 255, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 210, 255, 0.1) 1px, transparent 1px);
+        background-size: 20px 20px;
+    ">
+        <div style="
+            position: absolute;
+            left: {ax}%;
+            top: {ay}%;
+            width: 30px;
+            height: 30px;
+            background: #00d2ff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 20px #00d2ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            transition: all 0.1s linear;
+        ">{st.session_state.soul.moods[st.session_state.soul.current_mood]}</div>
+        
+        <div style="
+            position: absolute;
+            left: {tx}%;
+            top: {ty}%;
+            width: 25px;
+            height: 25px;
+            background: #ff0055;
+            transform: translate(-50%, -50%) rotate(45deg);
+            box-shadow: 0 0 15px #ff0055;
+            animation: pulse 1s infinite;
+        "></div>
+        
+        <div style="
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.05) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+        "></div>
+    </div>
+    <style>
+        @keyframes pulse {{
+            0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); }}
+            50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.2); }}
+            100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); }}
+        }}
+    </style>
+    """
+    st.markdown(html_grid, unsafe_allow_html=True)
+    
+    # Auto-Run Controls
     col_ctrl1, col_ctrl2 = st.columns(2)
-    if col_ctrl1.button("▶️ STEP"):
+    if col_ctrl1.button("▶️ RUN CYCLE (Step)"):
         step_environment()
         st.rerun()
         
-    auto_run = col_ctrl2.checkbox("♾️ AUTO")
+    auto_run = col_ctrl2.checkbox("♾️ AUTO-EVOLVE")
     if auto_run:
         step_environment()
         time.sleep(0.05)
         st.rerun()
-
-
 
 with col_mind:
     st.markdown("### 🧠 Cognitive Stream")
