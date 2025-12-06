@@ -34,6 +34,12 @@ st.set_page_config(
     page_icon="🧿"
 )
 
+# [TEMP FIX] Put this at the very top, after imports & page_config
+# This forces the brain to rebuild itself with the new 7-dimension shape.
+if 'agent' in st.session_state and st.session_state.agent.state_dim != 7:
+    del st.session_state['agent']
+    st.rerun()
+
 # Cyberpunk 2077 / Sci-Fi Lab Aesthetics
 st.markdown("""
 <style>
@@ -412,7 +418,7 @@ class WorldModel:
 
 class TDMPCAgent:
     def __init__(self):
-        self.state_dim = 5 # AgentX, AgentY, TargetX, TargetY, Energy
+        self.state_dim = 7 # AgentX, AgentY, TargetX, TargetY, Energy
         self.action_dim = 4 # Up, Down, Left, Right
         self.latent_dim = 16
         self.horizon = 5 # Planning Horizon (H)
