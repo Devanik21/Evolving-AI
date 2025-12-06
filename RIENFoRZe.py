@@ -654,8 +654,14 @@ def step_environment():
     
     # 3. Physics
     # 0: Up, 1: Down, 2: Left, 3: Right
+    # 3. Physics
+    # 0: Up, 1: Down, 2: Left, 3: Right
     move_vec = np.array([0.0, 0.0])
-    speed = 4.0
+    
+    # [PRINCE NIK UPDATE]: Dynamic Braking System
+    # If we are close (dist < 15), we slow down to grab the target
+    dist_to_target = np.linalg.norm(st.session_state.pos - st.session_state.target)
+    speed = 4.0 if dist_to_target > 15.0 else 1.5
     
     if action_idx == 0: move_vec[1] = -speed
     elif action_idx == 1: move_vec[1] = speed
@@ -666,21 +672,27 @@ def step_environment():
     st.session_state.pos += move_vec
     
     # Boundary Clip
+    # Boundary Clip
     st.session_state.pos = np.clip(st.session_state.pos, 0, 100)
     
     curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
     # 4. Rewards
-    reward = (prev_dist - curr_dist) * 2.0 
+    # [PRINCE NIK UPDATE]: Magnetic Reward Function
+    # We reward movement towards target AND simply existing near the target
+    movement_reward = (prev_dist - curr_dist) * 3.0 
+    proximity_bonus = 10.0 / (curr_dist + 1.0) # The closer it is, the higher this gets
+    
+    reward = movement_reward + proximity_bonus
     done = False
     
     if curr_dist < 5.0:
-        reward = 50.0 # Big win
+        reward = 100.0 # [BOOST]: Increased from 50 to 100 to make winning irresistible
         done = True
         st.session_state.wins += 1
         st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
         st.session_state.soul.energy = 100
-        st.toast("Target Acquired! Reward +50", icon="🎯")
+        st.toast("Target Acquired! Reward +100", icon="🎯")
     else:
         reward -= 0.1 # Time penalty
     
