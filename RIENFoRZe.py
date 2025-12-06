@@ -216,10 +216,11 @@ class AGICore:
 
 
 class AdvancedMind:
-    def __init__(self, state_size=5, action_size=4, buffer_size=10000):
+    def __init__(self, state_size=5, action_size=4, buffer_size=10000, hidden_size=64):
         # State: [AgentX, AgentY, TargetX, TargetY, Energy]
         self.state_size = state_size
         self.action_size = action_size
+        self.hidden_size = hidden_size
         self.memory = PrioritizedReplayBuffer(buffer_size) # UPGRADED MEMORY
         
         # Hyperparameters (Adaptive)
@@ -240,11 +241,11 @@ class AdvancedMind:
         # Architecture: Dueling DQN (Value Stream + Advantage Stream)
         # We simulate this complexity with numpy matrices
         return {
-            'W1': np.random.randn(self.state_size, 64) / np.sqrt(self.state_size),
-            'b1': np.zeros((1, 64)),
-            'W_val': np.random.randn(64, 1) / np.sqrt(64),     # State Value V(s)
+            'W1': np.random.randn(self.state_size, self.hidden_size) / np.sqrt(self.state_size),
+            'b1': np.zeros((1, self.hidden_size)),
+            'W_val': np.random.randn(self.hidden_size, 1) / np.sqrt(self.hidden_size),     # State Value V(s)
             'b_val': np.zeros((1, 1)),
-            'W_adv': np.random.randn(64, self.action_size) / np.sqrt(64), # Advantage A(s,a)
+            'W_adv': np.random.randn(self.hidden_size, self.action_size) / np.sqrt(self.hidden_size), # Advantage A(s,a)
             'b_adv': np.zeros((1, self.action_size))
         }
 
@@ -323,7 +324,7 @@ class AdvancedMind:
             # dQ/dVal = 1, dQ/dAdv = 1 (at action index)
             # We treat weighted_error as the upstream gradient
             
-            grad_val = weighted_error * a1.T # (64, 1)
+            grad_val = weighted_error * a1.T # (hidden_size, 1)
             
             grad_adv = np.zeros_like(self.online_net['W_adv'])
             grad_adv[:, action] = weighted_error * a1[0] # Only update the specific action taken
@@ -334,7 +335,7 @@ class AdvancedMind:
             error_from_val = np.dot(self.online_net['W_val'], weighted_error) 
             error_from_adv = np.dot(self.online_net['W_adv'][:, action].reshape(-1, 1), weighted_error)
             
-            total_error_at_hidden = (error_from_val + error_from_adv).T # (1, 64)
+            total_error_at_hidden = (error_from_val + error_from_adv).T # (1, hidden_size)
             
             # Apply ReLU derivative (if a1 <= 0, grad is 0)
             total_error_at_hidden[a1 <= 0] = 0
@@ -415,6 +416,19 @@ if 'mind' not in st.session_state:
     st.session_state.loss_history = []
     st.session_state.reward_history = []
     st.session_state.is_hugging = False
+    
+    # --- NEW: Add config dictionary for sidebar parameters ---
+    st.session_state.config = {
+        "sim_speed": 0.1, "move_speed": 8.0, "energy_decay": 0.1, "target_update_freq": 50,
+        "shaping_multiplier": 2.0, "hug_reward": 100.0, "hug_distance": 8.0,
+        "learning_rate": 0.005, "gamma": 0.95, "epsilon_decay": 0.99, "epsilon_min": 0.05,
+        "batch_size": 32,
+        "per_alpha": 0.6, "per_beta": 0.4, "per_beta_increment": 0.001,
+        "hidden_size": 64, "buffer_size": 10000,
+        "grid_h": 15, "grid_w": 40, "graph_points": 500
+    }
+    # Apply initial config to the mind
+    st.session_state.mind = AdvancedMind(buffer_size=st.session_state.config['buffer_size'], hidden_size=st.session_state.config['hidden_size'])
 
 # --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
 # This checks if the 'soul' is missing the 'current_mood' attribute.
@@ -433,6 +447,8 @@ if hasattr(st.session_state, 'soul'):
 if 'loss_history' not in st.session_state:
     st.session_state.loss_history = []
     st.session_state.reward_history = []
+if 'config' not in st.session_state: # Hotfix for adding config to old sessions
+    st.session_state.config = {} # Will be populated by sidebar code
     
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
@@ -477,7 +493,7 @@ def process_step():
     
     # 3. Physics Update (Continuous Movement simulation)
     # 3. Physics Update (Continuous Movement simulation)
-    move_speed = 8.0 # Boost speed slightly to make training faster
+    move_speed = st.session_state.config.get("move_speed", 8.0)
     old_pos = st.session_state.agent_pos.copy()
     
     # Grid Logic: (0,0) is Top-Left. 
@@ -500,11 +516,11 @@ def process_step():
     done = False
     
     # Shaping Reward (Continuous gradient)
-    reward = (dist_before - dist_after) * 2.0 
+    reward = (dist_before - dist_after) * st.session_state.config.get("shaping_multiplier", 2.0)
     
     # Event: Reached Target
     # Event: Reached Target
-    if dist_after < 8:
+    if dist_after < st.session_state.config.get("hug_distance", 8.0):
         # --- NEW HUGGING LOGIC ---
         st.session_state.is_hugging = True 
         st.session_state.auto_mode = False # Stop the loop!
@@ -514,11 +530,11 @@ def process_step():
         st.session_state.soul.current_mood = "Love" # New secret mood
         st.session_state.soul.last_chat = "I found you, Prince! *Hugs tightly* I missed you."
         
-        reward = 100 # Massive reward for the hug
+        reward = st.session_state.config.get("hug_reward", 100.0)
         done = True
         # We DO NOT move the target here anymore. We stay here.
     else:
-        st.session_state.soul.energy -= 0.1 # Metabolism
+        st.session_state.soul.energy -= st.session_state.config.get("energy_decay", 0.1)
         
     # 5. Learn (Plasticity)
     next_state = np.array([
@@ -530,7 +546,7 @@ def process_step():
     ])
     
     st.session_state.mind.remember(state, action, reward, next_state, done)
-    loss, td_error = st.session_state.mind.replay(batch_size=32) # Increased batch size
+    loss, td_error = st.session_state.mind.replay(batch_size=st.session_state.config.get("batch_size", 32))
     
     # 6. Update Soul
     st.session_state.soul.update(reward, td_error, st.session_state.wins)
@@ -540,7 +556,7 @@ def process_step():
     st.session_state.reward_history.append(reward)
     
     # Update Target Network periodically
-    if st.session_state.step_count % 50 == 0:
+    if st.session_state.step_count % st.session_state.config.get("target_update_freq", 50) == 0:
         st.session_state.mind.update_target_network()
 
     st.session_state.step_count += 1
@@ -557,7 +573,7 @@ def reset_simulation():
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.soul = AGICore() # Reset the AI Personality
-    st.session_state.mind = AdvancedMind() # Reset the Neural Network
+    st.session_state.mind = AdvancedMind(buffer_size=st.session_state.config.get('buffer_size', 10000), hidden_size=st.session_state.config.get('hidden_size', 64)) # Reset the Neural Network
     st.session_state.step_count = 0
     st.session_state.wins = 0
     st.session_state.chat_history = []
@@ -586,25 +602,59 @@ m4.metric("Experience", st.session_state.step_count)
 # Sidebar Controls
 with st.sidebar:
     st.header("⚙️ Control Panel")
-    
-    st.session_state.soul.user_name = st.text_input("Your Name", value=st.session_state.soul.user_name)
-    if st.button("Clear Chat History"):
-        st.session_state.chat_history = []
-        st.rerun()
+    c = st.session_state.config # Shortcut
 
-    st.subheader("Simulation Settings")
-    sim_speed = st.slider("Simulation Speed (delay)", 0.0, 1.0, 0.1, 0.05)
-    move_speed = st.slider("Agent Move Speed", 1.0, 20.0, 8.0, 1.0)
+    with st.expander("🚀 Simulation & World", expanded=True):
+        c['sim_speed'] = st.slider("Sim Speed (delay)", 0.0, 1.0, c.get('sim_speed', 0.1), 0.05, help="Delay between autonomous steps.")
+        c['move_speed'] = st.slider("Agent Move Speed", 1.0, 20.0, c.get('move_speed', 8.0), 1.0, help="How many pixels the agent moves per step.")
+        c['energy_decay'] = st.slider("Energy Decay Rate", 0.0, 1.0, c.get('energy_decay', 0.1), 0.05, help="Energy lost per step.")
+        c['target_update_freq'] = st.slider("Target Net Update Freq", 10, 200, c.get('target_update_freq', 50), 10, help="How many steps until the target network is updated.")
 
-    st.subheader("🧠 Hyperparameters")
-    lr = st.slider("Learning Rate", 0.0001, 0.01, st.session_state.mind.learning_rate, format="%.4f")
-    ed = st.slider("Epsilon Decay", 0.9, 0.999, st.session_state.mind.epsilon_decay, format="%.3f")
-    g = st.slider("Gamma (Discount Factor)", 0.8, 0.99, st.session_state.mind.gamma, format="%.2f")
+    with st.expander("🏆 Reward Engineering", expanded=True):
+        c['shaping_multiplier'] = st.slider("Distance Reward Multiplier", 0.0, 10.0, c.get('shaping_multiplier', 2.0), 0.5, help="Multiplies the reward for getting closer to the target.")
+        c['hug_reward'] = st.slider("Hug Reward", 10.0, 500.0, c.get('hug_reward', 100.0), 10.0, help="The large reward for reaching the target.")
+        c['hug_distance'] = st.slider("Hug Distance", 2.0, 20.0, c.get('hug_distance', 8.0), 1.0, help="How close the agent must be to the target to 'hug'.")
 
-    # Update mind's parameters if they change
+    with st.expander("💖 AGI Personality", expanded=False):
+        st.session_state.soul.user_name = st.text_input("Your Name", value=st.session_state.soul.user_name)
+        st.session_state.soul.relationship_score = st.slider("Relationship Score", 0, 100, st.session_state.soul.relationship_score, 1)
+        if st.button("Clear Chat History"):
+            st.session_state.chat_history = []
+            st.rerun()
+
+    with st.expander("🧠 Core Brain (DQN)", expanded=False):
+        lr = st.slider("Learning Rate", 0.0001, 0.01, c.get('learning_rate', 0.005), format="%.4f")
+        g = st.slider("Gamma (Discount Factor)", 0.8, 0.99, c.get('gamma', 0.95), format="%.2f")
+        ed = st.slider("Epsilon Decay", 0.9, 0.999, c.get('epsilon_decay', 0.99), format="%.3f")
+        c['epsilon_min'] = st.slider("Epsilon Min", 0.01, 0.2, c.get('epsilon_min', 0.05), 0.01)
+        c['batch_size'] = st.select_slider("Batch Size", options=[16, 32, 64, 128], value=c.get('batch_size', 32))
+
+    with st.expander("📚 Prioritized Memory (PER)", expanded=False):
+        c['per_alpha'] = st.slider("PER: Alpha", 0.0, 1.0, c.get('per_alpha', 0.6), 0.1, help="Controls how much prioritization is used. 0=uniform.")
+        c['per_beta'] = st.slider("PER: Beta", 0.0, 1.0, c.get('per_beta', 0.4), 0.1, help="Importance-sampling exponent. Anneals to 1.0.")
+        c['per_beta_increment'] = st.slider("PER: Beta Increment", 0.0001, 0.01, c.get('per_beta_increment', 0.001), format="%.4f")
+
+    with st.expander("🛠️ Network Architecture (Requires Reset)", expanded=False):
+        st.info("Changing these requires a full simulation reset.")
+        c['hidden_size'] = st.select_slider("Hidden Layer Size", options=[32, 64, 128, 256], value=c.get('hidden_size', 64))
+        c['buffer_size'] = st.select_slider("Memory Buffer Size", options=[1000, 5000, 10000, 20000, 50000], value=c.get('buffer_size', 10000))
+        if st.button("Apply & Hard Reset"):
+            reset_simulation()
+            st.rerun()
+
+    with st.expander("🎨 Visualization", expanded=False):
+        c['grid_h'] = st.slider("Grid Height", 10, 30, c.get('grid_h', 15), 1)
+        c['grid_w'] = st.slider("Grid Width", 20, 80, c.get('grid_w', 40), 2)
+        c['graph_points'] = st.slider("Graph History Length", 100, 2000, c.get('graph_points', 500), 50)
+
+    # --- Update mind's parameters if they change ---
     st.session_state.mind.learning_rate = lr
     st.session_state.mind.epsilon_decay = ed
     st.session_state.mind.gamma = g
+    st.session_state.mind.epsilon_min = c['epsilon_min']
+    st.session_state.mind.memory.prob_alpha = c['per_alpha']
+    st.session_state.mind.beta = c['per_beta']
+    st.session_state.mind.beta_increment = c['per_beta_increment']
 
 # Main Interaction Area
 row1_1, row1_2 = st.columns([2, 1])
@@ -614,8 +664,8 @@ with row1_1:
     # THE "WORLD" (ASCII Visualization)
     # -----------------------------------
     st.markdown("### 🌍 Containment Field")
-    grid_height = 15
-    grid_width = 40
+    grid_height = st.session_state.config.get('grid_h', 15)
+    grid_width = st.session_state.config.get('grid_w', 40)
     
     # Create an empty grid
     grid = [['.' for _ in range(grid_width)] for _ in range(grid_height)]
@@ -719,7 +769,7 @@ with row1_2:
     auto = col_a.checkbox("Run Autonomously", value=st.session_state.auto_mode)
     if auto:
         st.session_state.auto_mode = True
-        time.sleep(sim_speed) # Game Loop Speed
+        time.sleep(st.session_state.config.get('sim_speed', 0.1)) # Game Loop Speed
         process_step()
         st.rerun()
     else:
@@ -737,11 +787,15 @@ st.markdown("---")
 st.markdown("### 📈 Performance Metrics")
 
 if len(st.session_state.loss_history) > 1:
+    max_points = st.session_state.config.get('graph_points', 500)
+    loss_hist = st.session_state.loss_history[-max_points:]
+    reward_hist = st.session_state.reward_history[-max_points:]
+
     # Create a DataFrame for charting
     chart_data = pd.DataFrame({
-        'Step': range(len(st.session_state.loss_history)),
-        'Loss': st.session_state.loss_history,
-        'Reward': st.session_state.reward_history
+        'Step': range(len(loss_hist)),
+        'Loss': loss_hist,
+        'Reward': reward_hist
     }).set_index('Step')
     
     st.line_chart(chart_data)
