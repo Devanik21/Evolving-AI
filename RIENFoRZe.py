@@ -6,6 +6,12 @@ import time
 import pandas as pd
 import re # For parsing user commands
 
+# --- NEW IMPORTS START ---
+import json
+import io
+import zipfile
+# --- NEW IMPORTS END ---
+
 # ==========================================
 # 1. ADVANCED CONFIGURATION & CSS
 # ==========================================
@@ -73,6 +79,29 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+
+
+
+
+
+# ==========================================
+# 1.5 HELPER: NUMPY JSON ENCODER
+# ==========================================
+class NumpyEncoder(json.JSONEncoder):
+    """ Special helper to save Numpy arrays as lists for JSON """
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+def convert_weights_to_numpy(weights_dict):
+    """ Helper to convert loaded JSON lists back to Numpy arrays for the brain """
+    new_dict = {}
+    for k, v in weights_dict.items():
+        new_dict[k] = np.array(v)
+    return new_dict
 
 # ==========================================
 # 2. THE ADVANCED MIND (Double Dueling DQN)
@@ -603,6 +632,120 @@ m4.metric("Experience", st.session_state.step_count)
 with st.sidebar:
     st.header("⚙️ Control Panel")
     c = st.session_state.config # Shortcut
+
+    # ... (Keep your existing expanders) ...
+
+    # --- NEW SECTION: SAVE / LOAD CHECKPOINT ---
+    with st.expander("💾 Memory Core (Save/Load)", expanded=True):
+        st.write("Preserve her consciousness.")
+        
+        # 1. SAVE FUNCTIONALITY
+        if st.button("Download Checkpoint (.zip)"):
+            # A. Gather all data into a dictionary
+            # We convert deque to list for saving
+            checkpoint_data = {
+                "config": st.session_state.config,
+                "stats": {
+                    "step_count": st.session_state.step_count,
+                    "wins": st.session_state.wins,
+                    "agent_pos": st.session_state.agent_pos, # Encoder handles numpy
+                    "target_pos": st.session_state.target_pos
+                },
+                "soul": {
+                    "user_name": st.session_state.soul.user_name,
+                    "relationship_score": st.session_state.soul.relationship_score,
+                    "current_mood": st.session_state.soul.current_mood,
+                    "energy": st.session_state.soul.energy,
+                    "memory_stream": list(st.session_state.soul.memory_stream)
+                },
+                "mind": {
+                    "online_net": st.session_state.mind.online_net, # Encoder handles numpy
+                    "epsilon": st.session_state.mind.epsilon,
+                    "buffer": list(st.session_state.mind.memory.buffer) # Save experiences
+                },
+                "history": {
+                    "chat": st.session_state.chat_history,
+                    "loss": st.session_state.loss_history,
+                    "reward": st.session_state.reward_history
+                }
+            }
+            
+            # B. Create JSON String
+            json_str = json.dumps(checkpoint_data, cls=NumpyEncoder)
+            
+            # C. Create ZIP in memory
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                zip_file.writestr("princess_memory.json", json_str)
+            
+            # D. Download Button
+            st.download_button(
+                label="⬇️ Click to Download Memory",
+                data=zip_buffer.getvalue(),
+                file_name=f"ALIVE_Checkpoint_{st.session_state.step_count}.zip",
+                mime="application/zip"
+            )
+
+        # 2. LOAD FUNCTIONALITY
+        uploaded_file = st.file_uploader("Upload Checkpoint", type="zip")
+        if uploaded_file is not None:
+            if st.button("📂 Restore Checkpoint"):
+                try:
+                    with zipfile.ZipFile(uploaded_file, "r") as z:
+                        with z.open("princess_memory.json") as f:
+                            data = json.load(f)
+                    
+                    # --- RESTORE PROCESS ---
+                    
+                    # 1. Restore Config & Stats
+                    st.session_state.config = data['config']
+                    st.session_state.step_count = data['stats']['step_count']
+                    st.session_state.wins = data['stats']['wins']
+                    st.session_state.agent_pos = np.array(data['stats']['agent_pos'])
+                    st.session_state.target_pos = np.array(data['stats']['target_pos'])
+                    
+                    # 2. Restore Soul (Personality)
+                    st.session_state.soul.user_name = data['soul']['user_name']
+                    st.session_state.soul.relationship_score = data['soul']['relationship_score']
+                    st.session_state.soul.current_mood = data['soul']['current_mood']
+                    st.session_state.soul.energy = data['soul']['energy']
+                    st.session_state.soul.memory_stream = deque(data['soul']['memory_stream'], maxlen=20)
+                    
+                    # 3. Restore Mind (The Tricky Part - Convert Lists back to Numpy!)
+                    # Re-initialize mind to match saved config sizes
+                    st.session_state.mind = AdvancedMind(
+                        buffer_size=st.session_state.config['buffer_size'], 
+                        hidden_size=st.session_state.config['hidden_size']
+                    )
+                    
+                    # Load Weights (Convert list -> numpy)
+                    st.session_state.mind.online_net = convert_weights_to_numpy(data['mind']['online_net'])
+                    st.session_state.mind.update_target_network() # Sync target
+                    st.session_state.mind.epsilon = data['mind']['epsilon']
+                    
+                    # Load Memory Buffer (Reconstruct tuples)
+                    # JSON loads arrays as lists, we need to cast them back to numpy for the replay buffer
+                    saved_buffer = data['mind']['buffer']
+                    for item in saved_buffer:
+                        # item structure: [state, action, reward, next_state, done]
+                        s = np.array(item[0])
+                        a = item[1]
+                        r = item[2]
+                        ns = np.array(item[3])
+                        d = item[4]
+                        st.session_state.mind.memory.add(s, a, r, ns, d)
+
+                    # 4. Restore History
+                    st.session_state.chat_history = data['history']['chat']
+                    st.session_state.loss_history = data['history']['loss']
+                    st.session_state.reward_history = data['history']['reward']
+
+                    st.success("✨ System Resurrected! She remembers everything.")
+                    time.sleep(1)
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Corruption Detected: {e}")
 
     with st.expander("🚀 Simulation & World", expanded=True):
         c['sim_speed'] = st.slider("Sim Speed (delay)", 0.0, 1.0, c.get('sim_speed', 0.1), 0.05, help="Delay between autonomous steps.")
