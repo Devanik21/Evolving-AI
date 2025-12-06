@@ -38,7 +38,7 @@ st.set_page_config(
 
 # [AUTO-HEALING] BRAIN SIZE CHECK
 if 'agent' in st.session_state:
-    if st.session_state.agent.state_dim != 9:
+    if st.session_state.agent.state_dim != 5:
         del st.session_state['agent']
         if 'pos' in st.session_state: del st.session_state['pos']
         if 'loss_history' in st.session_state: del st.session_state['loss_history']
@@ -354,61 +354,53 @@ class WorldModel:
 
 class TDMPCAgent:
     def __init__(self):
-        self.state_dim = 9  
+        # PRINCE NIK UPDATE: Reverting to the "Intelligent" 5D State
+        self.state_dim = 5  # AgentX, AgentY, TargetX, TargetY, Energy
         self.action_dim = 4 
-        self.latent_dim = 48
-        self.horizon = 5
+        self.latent_dim = 48 # Keep the "Genius" size (v6 was 16)
+        self.horizon = 5     # We keep this for future potential
         
         self.world_model = WorldModel(self.state_dim, self.action_dim, self.latent_dim)
         
         self.memory = deque(maxlen=10000)
-        self.batch_size = 128
+        self.batch_size = 64 # Balanced batch size
         
-        # PRINCE NIK UPDATE: Slower decay to force map exploration
-        self.epsilon = 1.0        # Start 100% random
+        # v6.0 Exploration Settings (Proven to work)
+        self.epsilon = 0.6 
         self.epsilon_min = 0.05
-        self.epsilon_decay = 0.999 # Decay very slowly so it looks around more
-        
+        self.epsilon_decay = 0.995 
+
     def act(self, state, mode='plan'):
-        # 1. Pure Exploration
         if random.random() < self.epsilon:
-            return np.random.randint(4), []
+            return random.randint(0, 3), []
         
-        # 2. Planning (The Genius Part)
         state = state.reshape(1, -1)
         z_root = self.world_model.encoder_forward_numpy(state)
         
         best_action = 0
-        best_val = -float('inf')
+        max_return = -float('inf')
         
-        # Check all 4 directions
+        # v6.0 PLANNING LOGIC (Stable & Intelligent)
+        # Instead of guessing 5 steps blindly, we look 1 step ahead 
+        # and trust the "Value Function" (Intuition) for the rest.
         for action_idx in range(self.action_dim):
             a_vec = np.zeros((1, self.action_dim))
             a_vec[0, action_idx] = 1.0
             
+            # Predict immediate future
             z_next, r_pred = self.world_model.predict(z_root, a_vec)
-            cumulative_reward = r_pred[0,0]
             
-            # Look 5 steps into the future
-            curr_z = z_next
-            gamma = 0.95 # Slightly lower gamma to prioritize immediate survival
+            # r_pred is the immediate reward
+            # v_next is the "gut feeling" of how good the next state is
+            v_next = self.world_model.value_forward_numpy(z_next)
             
-            for h in range(self.horizon - 1):
-                v_guess = self.world_model.value_forward_numpy(curr_z)
-                cumulative_reward += (gamma ** (h+1)) * v_guess[0,0]
-                
-                # Assume we take the best guess action next
-                best_sub_a = np.zeros((1, self.action_dim))
-                # Simple heuristic for rollout
-                best_sub_a[0, np.random.randint(4)] = 1.0 
-                curr_z, sub_r = self.world_model.predict(curr_z, best_sub_a)
-                cumulative_reward += (gamma ** (h+1)) * sub_r[0,0]
+            # Q(s,a) = r + V(s')
+            expected_return = r_pred[0,0] + 0.95 * v_next[0,0]
             
-            if cumulative_reward > best_val:
-                best_val = cumulative_reward
+            if expected_return > max_return:
+                max_return = expected_return
                 best_action = action_idx
         
-        # Decay epsilon slightly
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
@@ -567,86 +559,73 @@ def reset_sim():
     st.toast("Simulation Reset. Memory Wiped.", icon="🧹")
 
 def step_environment():
-    # Helper to calculate state
-    def get_state_vector(pos_arr, target_arr, energy_val):
-        r_x = (target_arr[0] - pos_arr[0]) / 100.0
-        r_y = (target_arr[1] - pos_arr[1]) / 100.0
-        w_l = pos_arr[0] / 100.0
-        w_r = (100.0 - pos_arr[0]) / 100.0
-        w_t = pos_arr[1] / 100.0
-        w_b = (100.0 - pos_arr[1]) / 100.0
-        return np.array([r_x, r_y, w_l, w_r, w_t, w_b, pos_arr[0]/100.0, pos_arr[1]/100.0, energy_val/100.0])
-
-    state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
+    # PRINCE NIK UPDATE: v6.0 State Representation (Normalized)
+    # This is much easier for the AI to understand.
+    state = np.array([
+        st.session_state.pos[0]/100.0,
+        st.session_state.pos[1]/100.0,
+        st.session_state.target[0]/100.0,
+        st.session_state.target[1]/100.0,
+        st.session_state.soul.energy/100.0
+    ])
     
-    # Save previous position to check for "laziness"
+    # Check for "Laziness" (Did it stay in the same spot?)
     prev_pos = st.session_state.pos.copy()
     
     action_idx, _ = st.session_state.agent.act(state)
     
     move_vec = np.array([0.0, 0.0])
+    speed = 5.0 # Slightly faster than v6
     
-    dist_to_target = np.linalg.norm(st.session_state.pos - st.session_state.target)
-    speed = 6.0 # Constant speed is easier to learn initially
-    
-    # PRINCE NIK: Standard Grid Movement
-    if action_idx == 0: move_vec[1] = -speed # UP
-    elif action_idx == 1: move_vec[1] = speed  # DOWN
-    elif action_idx == 2: move_vec[0] = -speed # LEFT
-    elif action_idx == 3: move_vec[0] = speed  # RIGHT
+    if action_idx == 0: move_vec[1] = -speed # Up
+    elif action_idx == 1: move_vec[1] = speed  # Down
+    elif action_idx == 2: move_vec[0] = -speed # Left
+    elif action_idx == 3: move_vec[0] = speed  # Right
     
     prev_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
-    # Apply movement
     st.session_state.pos += move_vec
     
-    # --- COLLISION LOGIC ---
+    # --- Wall Collision Logic (Keep v7 Safety) ---
     hit_wall = False
-    if st.session_state.pos[0] < 2: 
-        st.session_state.pos[0] = 2
-        hit_wall = True
-    if st.session_state.pos[0] > 98: 
-        st.session_state.pos[0] = 98
-        hit_wall = True
-    if st.session_state.pos[1] < 2: 
-        st.session_state.pos[1] = 2
-        hit_wall = True
-    if st.session_state.pos[1] > 98: 
-        st.session_state.pos[1] = 98
-        hit_wall = True
-        
+    if st.session_state.pos[0] < 2: st.session_state.pos[0] = 2; hit_wall = True
+    if st.session_state.pos[0] > 98: st.session_state.pos[0] = 98; hit_wall = True
+    if st.session_state.pos[1] < 2: st.session_state.pos[1] = 2; hit_wall = True
+    if st.session_state.pos[1] > 98: st.session_state.pos[1] = 98; hit_wall = True
+    
     curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
-    # --- REWARD SYSTEM v7.1 ---
-    # 1. Distance Reward (Normalized)
-    reward = (prev_dist - curr_dist) * 10.0 
+    # PRINCE NIK UPDATE: v6.0 Reward Structure (Stable)
+    # Multiplier 2.0 is smoother than 50.0
+    reward = (prev_dist - curr_dist) * 2.0 
     
-    # 2. Wall Punishment
     if hit_wall:
-        reward -= 50.0 
-        
-    # 3. Laziness Punishment (If it didn't move effectively)
-    if np.linalg.norm(st.session_state.pos - prev_pos) < 1.0:
-        reward -= 10.0
+        reward -= 10.0 # Punish hitting walls
     
     done = False
     
-    # Capture Target
     if curr_dist < 6.0:
-        reward += 100.0
+        reward = 50.0 # Big win
         done = True
         st.session_state.wins += 1
         st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
         st.session_state.soul.energy = 100
-        st.toast("🎯 TARGET ACQUIRED!", icon="⚡")
+        st.toast("🎯 TARGET ACQUIRED! Intelligence: RESTORED", icon="⚡")
     else:
-        # Small living cost to encourage speed
-        reward -= 0.1
+        reward -= 0.1 # Living cost
     
-    next_state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
+    # Next State
+    next_state = np.array([
+        st.session_state.pos[0]/100.0,
+        st.session_state.pos[1]/100.0,
+        st.session_state.target[0]/100.0,
+        st.session_state.target[1]/100.0,
+        st.session_state.soul.energy/100.0
+    ])
+    
     st.session_state.agent.remember(state, action_idx, reward, next_state, done)
     
-    # Training Loop
+    # Hyper-Learning (Keep v7 Speed)
     total_loss = 0
     for _ in range(5):
         total_loss += st.session_state.agent.replay()
