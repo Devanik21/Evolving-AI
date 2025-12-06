@@ -41,7 +41,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap');
     
     .stApp {
-        background: radial-gradient(circle at 50% 50%, #0b0b15 0%, #000000 100%);
+        background-color: #05050a; /* Darker, solid background */
         color: #a0a0ff;
         font-family: 'Rajdhani', sans-serif;
     }
@@ -49,16 +49,16 @@ st.markdown("""
     /* Neon Headers */
     h1, h2, h3 {
         font-family: 'Orbitron', sans-serif;
-        color: #fff;
-        text-shadow: 0 0 10px #00d2ff, 0 0 20px #00d2ff;
+        color: #e0e0ff;
+        text-shadow: 0 0 5px rgba(0, 210, 255, 0.5); /* Reduced glow */
         letter-spacing: 2px;
     }
     
     /* HUD Elements */
     .hud-box {
         background: rgba(10, 20, 40, 0.8);
-        border: 1px solid #00d2ff;
-        box-shadow: 0 0 15px rgba(0, 210, 255, 0.2);
+        border: 1px solid rgba(0, 210, 255, 0.4); /* Softer border */
+        box-shadow: 0 0 8px rgba(0, 210, 255, 0.1); /* Reduced glow */
         padding: 15px;
         border-radius: 5px;
         margin-bottom: 10px;
@@ -79,14 +79,14 @@ st.markdown("""
     }
     .stButton>button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 0 25px rgba(0, 210, 255, 0.8);
+        box-shadow: 0 0 15px rgba(0, 210, 255, 0.5); /* Reduced hover glow */
         color: white;
     }
     
     /* Chat Aesthetics */
     .ai-bubble {
         background: linear-gradient(90deg, rgba(0, 221, 255, 0.1), transparent);
-        border-left: 2px solid #00ddff;
+        border-left: 2px solid rgba(0, 221, 255, 0.6); /* Softer border */
         padding: 10px 15px;
         font-family: 'Rajdhani', monospace;
         color: #ccffff;
@@ -95,7 +95,7 @@ st.markdown("""
     }
     .user-bubble {
         background: linear-gradient(-90deg, rgba(255, 0, 85, 0.1), transparent);
-        border-right: 2px solid #ff0055;
+        border-right: 2px solid rgba(255, 0, 85, 0.6); /* Softer border */
         padding: 10px 15px;
         text-align: right;
         font-family: 'Rajdhani', sans-serif;
@@ -702,10 +702,10 @@ with col_sim:
     # 2. Build the HTML String (The "Matrix")
     # FIX: We compress the HTML into single lines to prevent "Code Block" detection.
     html_grid = f"""
-<div style="position: relative; width: 100%; height: 400px; background-color: #0f0f1e; border: 2px solid #00d2ff; border-radius: 10px; overflow: hidden; margin-bottom: 20px; background-image: linear-gradient(rgba(0, 210, 255, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 210, 255, 0.1) 1px, transparent 1px); background-size: 20px 20px;">
-    <div style="position: absolute; left: {ax}%; top: {ay}%; width: 40px; height: 40px; background: rgba(0, 210, 255, 0.2); border: 2px solid #00d2ff; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 20px #00d2ff; display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 10; transition: all 0.2s ease-out;">{mood_icon}</div>
-    <div style="position: absolute; left: {tx}%; top: {ty}%; width: 25px; height: 25px; background: #ff0055; transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 15px #ff0055; z-index: 5; animation: targetPulse 1s infinite;"></div>
-    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.05) 50%); background-size: 100% 4px; pointer-events: none; z-index: 20;"></div>
+<div style="position: relative; width: 100%; height: 400px; background-color: #0f0f1e; border: 1px solid rgba(0, 210, 255, 0.4); border-radius: 10px; overflow: hidden; margin-bottom: 20px; background-image: linear-gradient(rgba(0, 210, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 210, 255, 0.05) 1px, transparent 1px); background-size: 20px 20px;">
+    <div style="position: absolute; left: {ax}%; top: {ay}%; width: 40px; height: 40px; background: rgba(0, 210, 255, 0.15); border: 2px solid rgba(0, 210, 255, 0.7); border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 12px rgba(0, 210, 255, 0.5); display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 10; transition: all 0.2s ease-out;">{mood_icon}</div>
+    <div style="position: absolute; left: {tx}%; top: {ty}%; width: 25px; height: 25px; background: #ff0055; transform: translate(-50%, -50%) rotate(45deg); box-shadow: 0 0 10px #ff0055; z-index: 5; animation: targetPulse 1.5s infinite;"></div>
+    <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(transparent 50%, rgba(0, 210, 255, 0.03) 50%); background-size: 100% 4px; pointer-events: none; z-index: 20;"></div>
     <style>@keyframes targetPulse {{ 0% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }} 50% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1.3); opacity: 0.8; }} 100% {{ transform: translate(-50%, -50%) rotate(45deg) scale(1); opacity: 1; }} }}</style>
 </div>
 """
