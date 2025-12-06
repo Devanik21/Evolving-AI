@@ -418,13 +418,15 @@ class WorldModel:
 
 class TDMPCAgent:
     def __init__(self):
-        # CHANGED: Updated from 5 to 7 to match your new Relative Vision System
-        self.state_dim = 7  # AgentX, AgentY, TargetX, TargetY, Energy, + Wall Sensors
-        self.action_dim = 4 # Up, Down, Left, Right
+        # CHANGED: Increased from 7 to 9.
+        # We are adding Absolute X and Absolute Y back (Best of both worlds)
+        self.state_dim = 9  
+        self.action_dim = 4 
         self.latent_dim = 16
-        self.horizon = 5 # Planning Horizon (H)
+        self.horizon = 5 
         
         self.world_model = WorldModel(self.state_dim, self.action_dim, self.latent_dim)
+        # ... rest of code remains same
         self.memory = deque(maxlen=2000)
         self.batch_size = 32
         self.epsilon = 0.5 
@@ -631,20 +633,26 @@ def reset_sim():
     st.toast("Simulation Reset. Memory Wiped.", icon="🧹")
 
 # [FINAL UPDATE: RELATIVE VISION SYSTEM]
+# [PRINCE NIK UPDATE]: Hybrid Vision & Stress-Free Learning
 def step_environment():
     # --- HELPER: Internal function to generate state vector ---
     def get_state_vector(pos_arr, target_arr, energy_val):
-        # Relative Target Vector
+        # 1. Relative Vector (The Compass)
         r_x = (target_arr[0] - pos_arr[0]) / 100.0
         r_y = (target_arr[1] - pos_arr[1]) / 100.0
         
-        # Wall Sensors
+        # 2. Wall Sensors (The Safety)
         w_l = (100.0 - pos_arr[0]) / 100.0
         w_r = pos_arr[0] / 100.0
         w_t = pos_arr[1] / 100.0
         w_b = (100.0 - pos_arr[1]) / 100.0
         
-        return np.array([r_x, r_y, w_l, w_r, w_t, w_b, energy_val/100.0])
+        # 3. Absolute GPS (The Map - FROM V12)
+        abs_x = pos_arr[0] / 100.0
+        abs_y = pos_arr[1] / 100.0
+        
+        # Total Dimensions: 2 + 4 + 2 + 1 (energy) = 9
+        return np.array([r_x, r_y, w_l, w_r, w_t, w_b, abs_x, abs_y, energy_val/100.0])
 
     # 1. Prepare Current State
     state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
@@ -653,15 +661,11 @@ def step_environment():
     action_idx, _ = st.session_state.agent.act(state)
     
     # 3. Physics
-    # 0: Up, 1: Down, 2: Left, 3: Right
-    # 3. Physics
-    # 0: Up, 1: Down, 2: Left, 3: Right
     move_vec = np.array([0.0, 0.0])
     
-    # [PRINCE NIK UPDATE]: Dynamic Braking System
-    # If we are close (dist < 15), we slow down to grab the target
+    # Dynamic Speed: Fast when far, precise when close
     dist_to_target = np.linalg.norm(st.session_state.pos - st.session_state.target)
-    speed = 4.0 if dist_to_target > 15.0 else 1.5
+    speed = 5.0 if dist_to_target > 10.0 else 2.0
     
     if action_idx == 0: move_vec[1] = -speed
     elif action_idx == 1: move_vec[1] = speed
@@ -670,53 +674,39 @@ def step_environment():
     
     prev_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     st.session_state.pos += move_vec
-    
-    # Boundary Clip
-    # Boundary Clip
     st.session_state.pos = np.clip(st.session_state.pos, 0, 100)
-    
     curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
-    # 4. Rewards
-    # [PRINCE NIK UPDATE]: Magnetic Reward Function
-    # We reward movement towards target AND simply existing near the target
-    # 4. Rewards
-    # [PRINCE NIK UPDATE]: The "Electric Fence" & Anti-Lurking System
-    
-    # A. MOVEMENT (The Magnet)
-    movement_reward = (prev_dist - curr_dist) * 3.0 
+    # 4. Rewards (Simplified for Faster Learning)
+    # A. MOVEMENT (The Magnet) - Increased strength
+    movement_reward = (prev_dist - curr_dist) * 4.0 
     
     # B. PROXIMITY (The Gravity)
-    proximity_bonus = 10.0 / (curr_dist + 1.0)
+    proximity_bonus = 15.0 / (curr_dist + 1.0)
     
     reward = movement_reward + proximity_bonus
     
     # C. ELECTRIC FENCE (Wall Penalty)
-    # If x or y is near the edges (0 or 100), give a massive penalty.
-    # This forces the agent to fear the walls.
-    if (st.session_state.pos[0] <= 2.0 or st.session_state.pos[0] >= 98.0 or 
-        st.session_state.pos[1] <= 2.0 or st.session_state.pos[1] >= 98.0):
-        reward -= 10.0 
-        
-    # D. LAZINESS PENALTY (Anti-Lurking)
-    # If the distance didn't change (it's standing still), punish it.
-    if abs(prev_dist - curr_dist) < 0.05:
-        reward -= 2.0
+    # Penalize only if it ACTUALLY hits the wall hard
+    if (st.session_state.pos[0] <= 1.0 or st.session_state.pos[0] >= 99.0 or 
+        st.session_state.pos[1] <= 1.0 or st.session_state.pos[1] >= 99.0):
+        reward -= 5.0 
+    
+    # REMOVED: Laziness Penalty. Let the baby AI explore without fear!
     
     done = False
     
     if curr_dist < 5.0:
-        reward = 100.0 # Big Win
+        reward = 100.0 # JACKPOT
         done = True
         st.session_state.wins += 1
         st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
         st.session_state.soul.energy = 100
-        st.toast("Target Acquired! Reward +100", icon="🎯")
+        st.toast("Target Captured! Neural Pathways Reinforced.", icon="🧬")
     else:
-        reward -= 0.1 # Standard Time Penalty
+        reward -= 0.1 # Tiny time penalty to encourage speed
     
-    # 5. Training Step (TD-MPC Update)
-    # FIX: We now generate next_state using the exact same logic as state
+    # 5. Training Step
     next_state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
     
     st.session_state.agent.remember(state, action_idx, reward, next_state, done)
