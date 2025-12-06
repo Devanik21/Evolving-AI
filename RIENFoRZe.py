@@ -89,11 +89,20 @@ st.markdown("""
 # ==========================================
 # 1.5 HELPER: NUMPY JSON ENCODER
 # ==========================================
+# ==========================================
+# 1.5 HELPER: NUMPY JSON ENCODER (Upgraded)
+# ==========================================
 class NumpyEncoder(json.JSONEncoder):
-    """ Special helper to save Numpy arrays as lists for JSON """
+    """ Special helper to save Numpy types as standard Python types """
     def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
+        if isinstance(obj, np.integer):
+            return int(obj)  # Convert numpy int to python int
+        elif isinstance(obj, np.floating):
+            return float(obj) # Convert numpy float to python float
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist() # Convert array to list
+        elif isinstance(obj, np.bool_):
+            return bool(obj) # Convert numpy bool to python bool
         return super().default(obj)
 
 def convert_weights_to_numpy(weights_dict):
