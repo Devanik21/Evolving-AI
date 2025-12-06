@@ -502,6 +502,65 @@ if 'loss_history' not in st.session_state:
     st.session_state.reward_history = []
 if 'config' not in st.session_state: # Hotfix for adding config to old sessions
     st.session_state.config = {} # Will be populated by sidebar code
+
+
+
+
+
+# ==========================================
+# 1.6 HELPER: LAZY MAZE GENERATOR
+# ==========================================
+def generate_maze(height, width):
+    """
+    Generates a maze using Recursive Backtracker. 
+    1 = Wall, 0 = Path.
+    """
+    # Initialize with all walls
+    maze = np.ones((height, width), dtype=int)
+    
+    # Starting point
+    start_y, start_x = 1, 1
+    maze[start_y, start_x] = 0
+    stack = [(start_y, start_x)]
+    
+    directions = [(0, 2), (0, -2), (2, 0), (-2, 0)]
+    
+    while stack:
+        y, x = stack[-1]
+        random.shuffle(directions)
+        moved = False
+        
+        for dy, dx in directions:
+            ny, nx = y + dy, x + dx
+            
+            # Check boundaries and if it's a wall
+            if 1 <= ny < height-1 and 1 <= nx < width-1 and maze[ny, nx] == 1:
+                # Carve path (current + intermediate cell)
+                maze[ny, nx] = 0
+                maze[y + dy//2, x + dx//2] = 0
+                stack.append((ny, nx))
+                moved = True
+                break
+        
+        if not moved:
+            stack.pop()
+            
+    return maze
+
+def check_wall_collision(new_pos, maze_grid):
+    """Checks if the float position maps to a wall in the maze grid."""
+    if maze_grid is None: return False
+    
+    h, w = maze_grid.shape
+    # Map 0-100 float pos to grid indices
+    y = int(new_pos[1] / 100 * (h - 1))
+    x = int(new_pos[0] / 100 * (w - 1))
+    
+    # Safety bounds
+    y = max(0, min(y, h-1))
+    x = max(0, min(x, w-1))
+    
+    return maze_grid[y, x] == 1
     
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
@@ -823,6 +882,25 @@ with st.sidebar:
         c['grid_w'] = st.slider("Grid Width", 20, 80, c.get('grid_w', 40), 2)
         c['graph_points'] = st.slider("Graph History Length", 100, 2000, c.get('graph_points', 500), 50)
 
+
+    with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=False):
+        enable_maze = st.checkbox("Initialize Maze Mode")
+        
+        if enable_maze:
+            # LAZY LOADING: Only generate if it doesn't exist yet
+            if 'maze_grid' not in st.session_state:
+                h = st.session_state.config.get('grid_h', 15)
+                w = st.session_state.config.get('grid_w', 40)
+                st.session_state.maze_grid = generate_maze(h, w)
+                st.toast("🧱 Labyrinth Constructed", icon="🏗️")
+                
+                # Reset positions to safe spots
+                st.session_state.agent_pos = np.array([5.0, 5.0]) # Top Left
+                st.session_state.target_pos = np.array([95.0, 95.0]) # Bottom Right
+        else:
+            # Unload maze to free memory/state
+            st.session_state.maze_grid = None
+
     # --- Update mind's parameters if they change ---
     st.session_state.mind.learning_rate = lr
     st.session_state.mind.epsilon_decay = ed
@@ -844,7 +922,22 @@ with row1_1:
     grid_width = st.session_state.config.get('grid_w', 40)
     
     # Create an empty grid
-    grid = [['.' for _ in range(grid_width)] for _ in range(grid_height)]
+    # -----------------------------------
+    # THE "WORLD" (ASCII Visualization)
+    # -----------------------------------
+    st.markdown("### 🌍 Containment Field")
+    grid_height = st.session_state.config.get('grid_h', 15)
+    grid_width = st.session_state.config.get('grid_w', 40)
+    
+    # Check if Maze Mode is active
+    current_maze = st.session_state.get('maze_grid', None)
+    
+    if current_maze is not None:
+        # Load the Maze structure
+        grid = [['#' if cell == 1 else '.' for cell in row] for row in current_maze]
+    else:
+        # Standard Empty Grid
+        grid = [['.' for _ in range(grid_width)] for _ in range(grid_height)]
     
     # Scale positions to fit the grid
     agent_y = int(st.session_state.agent_pos[1] / 100 * (grid_height - 1))
@@ -852,21 +945,29 @@ with row1_1:
     target_y = int(st.session_state.target_pos[1] / 100 * (grid_height - 1))
     target_x = int(st.session_state.target_pos[0] / 100 * (grid_width - 1))
 
-    # Place agent and target
-    # Ensure they don't overwrite each other for clarity
-    # Place agent and target
+    # Bounds Checking for Rendering (Prevent crash if resized)
+    agent_y = max(0, min(agent_y, grid_height-1))
+    agent_x = max(0, min(agent_x, grid_width-1))
+    target_y = max(0, min(target_y, grid_height-1))
+    target_x = max(0, min(target_x, grid_width-1))
+
+    # Place Objects (Logic remains mostly the same)
     if st.session_state.get('is_hugging', False):
-        # If hugging, show the hug emoji at the collision point
         grid[agent_y][agent_x] = '🫂' 
     elif (agent_y, agent_x) == (target_y, target_x):
         grid[agent_y][agent_x] = '💥'
     else:
-        # Check if mood exists in dict, otherwise default to Happy
         mood_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
+        
+        # In maze mode, ensure target isn't inside a wall
+        if current_maze is not None and grid[target_y][target_x] == '#':
+             grid[target_y][target_x] = '💎' # Force draw target over wall (or move target logic elsewhere)
+        else:
+             grid[target_y][target_x] = '💎'
+             
         grid[agent_y][agent_x] = mood_icon
-        grid[target_y][target_x] = '💎'
 
-    # Convert grid to a single string and display
+    # Render
     grid_str = "\n".join(" ".join(row) for row in grid)
     st.code(grid_str, language=None)
 
