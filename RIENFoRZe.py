@@ -3,6 +3,7 @@ import numpy as np
 import random
 from collections import deque
 import time
+import pandas as pd
 import re # For parsing user commands
 
 # ==========================================
@@ -411,6 +412,8 @@ if 'mind' not in st.session_state:
     st.session_state.wins = 0
     st.session_state.auto_mode = False
     st.session_state.chat_history = []
+    st.session_state.loss_history = []
+    st.session_state.reward_history = []
     st.session_state.is_hugging = False
 
 # --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
@@ -527,6 +530,10 @@ def process_step():
     # 6. Update Soul
     st.session_state.soul.update(reward, td_error, st.session_state.wins)
     
+    # 7. Log for Graphing
+    st.session_state.loss_history.append(loss)
+    st.session_state.reward_history.append(reward)
+    
     # Update Target Network periodically
     if st.session_state.step_count % 50 == 0:
         st.session_state.mind.update_target_network()
@@ -549,11 +556,17 @@ def reset_simulation():
     st.session_state.step_count = 0
     st.session_state.wins = 0
     st.session_state.chat_history = []
+    st.session_state.loss_history = []
+    st.session_state.reward_history = []
     st.session_state.is_hugging = False
     st.toast("🔄 Simulation Hard Reset Complete")
 
 # ==========================================
 # 5. UI LAYOUT
+# ==========================================
+
+# ==========================================
+# 5. UI LAYOUT & CONTROLS
 # ==========================================
 st.title("🧬 Project A.L.I.V.E.")
 st.caption("Autonomous Learning Intelligent Virtual Entity")
@@ -564,6 +577,29 @@ m1.metric("Status", st.session_state.soul.current_mood)
 m2.metric("Energy", f"{st.session_state.soul.energy:.1f}%", f"{st.session_state.wins} Wins")
 m3.metric("IQ (Loss)", f"{st.session_state.mind.epsilon:.3f}")
 m4.metric("Experience", st.session_state.step_count)
+
+# Sidebar Controls
+with st.sidebar:
+    st.header("⚙️ Control Panel")
+    
+    st.session_state.soul.user_name = st.text_input("Your Name", value=st.session_state.soul.user_name)
+    if st.button("Clear Chat History"):
+        st.session_state.chat_history = []
+        st.rerun()
+
+    st.subheader("Simulation Settings")
+    sim_speed = st.slider("Simulation Speed (delay)", 0.0, 1.0, 0.1, 0.05)
+    move_speed = st.slider("Agent Move Speed", 1.0, 20.0, 8.0, 1.0)
+
+    st.subheader("🧠 Hyperparameters")
+    lr = st.slider("Learning Rate", 0.0001, 0.01, st.session_state.mind.learning_rate, format="%.4f")
+    ed = st.slider("Epsilon Decay", 0.9, 0.999, st.session_state.mind.epsilon_decay, format="%.3f")
+    g = st.slider("Gamma (Discount Factor)", 0.8, 0.99, st.session_state.mind.gamma, format="%.2f")
+
+    # Update mind's parameters if they change
+    st.session_state.mind.learning_rate = lr
+    st.session_state.mind.epsilon_decay = ed
+    st.session_state.mind.gamma = g
 
 # Main Interaction Area
 row1_1, row1_2 = st.columns([2, 1])
@@ -678,7 +714,7 @@ with row1_2:
     auto = col_a.checkbox("Run Autonomously", value=st.session_state.auto_mode)
     if auto:
         st.session_state.auto_mode = True
-        time.sleep(0.1) # Game Loop Speed
+        time.sleep(sim_speed) # Game Loop Speed
         process_step()
         st.rerun()
     else:
@@ -689,6 +725,20 @@ with row1_2:
     
     if col_c.button("🔄 Reset Simulation"):
         reset_simulation()
+        st.rerun()
+
+# Performance Graph
+st.markdown("---")
+st.markdown("### 📈 Performance Metrics")
+if len(st.session_state.loss_history) > 1:
+    # Create a DataFrame for charting
+    chart_data = pd.DataFrame({
+        'Step': range(len(st.session_state.loss_history)),
+        'Loss': st.session_state.loss_history,
+        'Reward': st.session_state.reward_history
+    }).set_index('Step')
+    
+    st.line_chart(chart_data)
 
 # Debug / Mind Palace
 with st.expander("🧠 Open Mind Palace (Neural Weights)"):
