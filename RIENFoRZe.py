@@ -136,8 +136,8 @@ class AGICore:
             "Neutral": "•_•",
             "Love": "😍"
         }
-        self.current_mood = "Neutral" # Fixed: Was 'emotional_state'
-        self.energy = 100             # Fixed: Added Energy
+        self.current_mood = "Neutral"
+        self.energy = 100
         self.last_chat = "System initialized."
         
         # --- 2. AGI MIND STATS ---
@@ -153,22 +153,36 @@ class AGICore:
             "confusion": ["?", "What?", "Help me understand."]
         }
 
-    def ponder(self, user_input, current_loss):
-        """Generates an inner monologue based on input."""
-        if "bad" in user_input or "stupid" in user_input:
-            self.thought_process = "Analysis: Negative sentiment. Adjusting..."
-            self.relationship_score = max(0, self.relationship_score - 10)
-            self.current_mood = "Sad" # Update mood
-        elif "good" in user_input or "love" in user_input:
-            self.thought_process = "Analysis: Positive reinforcement detected."
-            self.relationship_score = min(100, self.relationship_score + 5)
-            self.current_mood = "Happy" # Update mood
-        elif current_loss > 5:
-            self.thought_process = "System Alert: High uncertainty."
+    # --- THIS WAS MISSING ---
+    def update(self, reward, td_error, recent_wins):
+        """Processes simulation data to update mood/thoughts automatically."""
+        if self.energy < 20:
+            self.current_mood = "Sleeping"
+            self.thought_process = "CRITICAL: Energy low. Reducing cognitive load."
+        elif reward > 10:
+            self.current_mood = "Excited"
+            self.thought_process = "ANALYSIS: Significant success detected! Dopamine release."
+        elif reward < -5:
+            self.current_mood = "Sad"
+            self.thought_process = "ANALYSIS: Negative outcome. Re-evaluating strategy."
+        elif td_error > 5:
             self.current_mood = "Confused"
+            self.thought_process = "ANALYSIS: Surprise event. High learning opportunity."
         else:
-            self.thought_process = f"Processing input: '{user_input}'..."
             self.current_mood = "Neutral"
+            
+    def ponder(self, user_input, current_loss):
+        """Generates an inner monologue based on chat input."""
+        if "bad" in user_input or "stupid" in user_input:
+            self.thought_process = "Input Analysis: Hostility detected. Defense mechanisms active."
+            self.relationship_score = max(0, self.relationship_score - 10)
+            self.current_mood = "Sad"
+        elif "good" in user_input or "love" in user_input:
+            self.thought_process = "Input Analysis: Affection detected. Relationship score increased."
+            self.relationship_score = min(100, self.relationship_score + 5)
+            self.current_mood = "Love"
+        else:
+            self.thought_process = f"Processing query: '{user_input}'..."
 
     def speak(self, user_input):
         self.memory_stream.append(f"User: {user_input}")
@@ -198,7 +212,6 @@ class AGICore:
             
         self.memory_stream.append(f"AI: {reply}")
         return reply
-
 
 
 class AdvancedMind:
@@ -403,13 +416,16 @@ if 'mind' not in st.session_state:
 # --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
 # This checks if the 'soul' is missing the 'current_mood' attribute.
 # If it is missing, we force a complete brain transplant to the new AGICore.
+# --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
+# Checks if the 'soul' object is outdated or missing the new 'update' function
 if hasattr(st.session_state, 'soul'):
-    # Check if we are missing critical attributes
-    if not hasattr(st.session_state.soul, 'current_mood') or not hasattr(st.session_state.soul, 'energy'):
-        st.session_state.soul = AGICore() # FORCE UPDATE
-        st.toast("❤️ Emotional Core Installed Successfully!")
+    # We check if the existing object has the 'update' method. If not, it's an old version!
+    if not hasattr(st.session_state.soul, 'update') or not hasattr(st.session_state.soul, 'current_mood'):
+        st.session_state.soul = AGICore() # FORCE REBOOT
+        st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
         time.sleep(0.5)
         st.rerun()
+    
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
     """
@@ -516,6 +532,25 @@ def process_step():
         st.session_state.mind.update_target_network()
 
     st.session_state.step_count += 1
+
+
+
+
+
+
+
+
+def reset_simulation():
+    """Resets the agent, target, and stats."""
+    st.session_state.agent_pos = np.array([50.0, 50.0])
+    st.session_state.target_pos = np.array([80.0, 20.0])
+    st.session_state.soul = AGICore() # Reset the AI Personality
+    st.session_state.mind = AdvancedMind() # Reset the Neural Network
+    st.session_state.step_count = 0
+    st.session_state.wins = 0
+    st.session_state.chat_history = []
+    st.session_state.is_hugging = False
+    st.toast("🔄 Simulation Hard Reset Complete")
 
 # ==========================================
 # 5. UI LAYOUT
