@@ -363,24 +363,25 @@ class TDMPCAgent:
         
         self.memory = deque(maxlen=10000)
         self.batch_size = 128
-        self.epsilon = 0.95
-        self.epsilon_min = 0.05
-        self.epsilon_decay = 0.995
-        self.action_momentum = [0.25, 0.25, 0.25, 0.25]
-
-    def act(self, state, mode='plan'):
-        # 1. Exploration with anti-stuck mechanism
-        if random.random() < self.epsilon:
-            action = np.random.choice(4, p=self.action_momentum)
-            return action, []
         
-        # 2. Planning
+        # PRINCE NIK UPDATE: Slower decay to force map exploration
+        self.epsilon = 1.0        # Start 100% random
+        self.epsilon_min = 0.05
+        self.epsilon_decay = 0.999 # Decay very slowly so it looks around more
+        
+    def act(self, state, mode='plan'):
+        # 1. Pure Exploration
+        if random.random() < self.epsilon:
+            return np.random.randint(4), []
+        
+        # 2. Planning (The Genius Part)
         state = state.reshape(1, -1)
         z_root = self.world_model.encoder_forward_numpy(state)
         
         best_action = 0
         best_val = -float('inf')
         
+        # Check all 4 directions
         for action_idx in range(self.action_dim):
             a_vec = np.zeros((1, self.action_dim))
             a_vec[0, action_idx] = 1.0
@@ -388,15 +389,18 @@ class TDMPCAgent:
             z_next, r_pred = self.world_model.predict(z_root, a_vec)
             cumulative_reward = r_pred[0,0]
             
+            # Look 5 steps into the future
             curr_z = z_next
-            gamma = 0.97
+            gamma = 0.95 # Slightly lower gamma to prioritize immediate survival
             
             for h in range(self.horizon - 1):
                 v_guess = self.world_model.value_forward_numpy(curr_z)
                 cumulative_reward += (gamma ** (h+1)) * v_guess[0,0]
                 
+                # Assume we take the best guess action next
                 best_sub_a = np.zeros((1, self.action_dim))
-                best_sub_a[0, np.random.randint(4)] = 1.0
+                # Simple heuristic for rollout
+                best_sub_a[0, np.random.randint(4)] = 1.0 
                 curr_z, sub_r = self.world_model.predict(curr_z, best_sub_a)
                 cumulative_reward += (gamma ** (h+1)) * sub_r[0,0]
             
@@ -404,12 +408,7 @@ class TDMPCAgent:
                 best_val = cumulative_reward
                 best_action = action_idx
         
-        # Update action momentum (anti-bias)
-        self.action_momentum = [0.25] * 4
-        self.action_momentum[best_action] = 0.1
-        total = sum(self.action_momentum)
-        self.action_momentum = [x/total for x in self.action_momentum]
-        
+        # Decay epsilon slightly
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
