@@ -219,89 +219,41 @@ class AGICore:
         return reply
 
 
+
+
 # ==========================================
-# 2. THE ADVANCED MIND (Titan Architecture)
+# 2. THE ADVANCED MIND (The "Simple" Brain - Restored)
 # ==========================================
-
-class AdamOptimizer:
-    """
-    Implements the Adam algorithm (Adaptive Moment Estimation).
-    This gives the AI 'momentum' in learning, allowing it to navigate 
-    complex strategies much faster than standard SGD.
-    """
-    def __init__(self, params, lr=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
-        self.lr = lr
-        self.beta1 = beta1
-        self.beta2 = beta2
-        self.epsilon = epsilon
-        self.m = {k: np.zeros_like(v) for k, v in params.items()}
-        self.v = {k: np.zeros_like(v) for k, v in params.items()}
-        self.t = 0
-
-    def update(self, params, grads):
-        self.t += 1
-        for k in params.keys():
-            if k in grads:
-                # 1. Update biased first moment estimate
-                self.m[k] = self.beta1 * self.m[k] + (1 - self.beta1) * grads[k]
-                # 2. Update biased second raw moment estimate
-                self.v[k] = self.beta2 * self.v[k] + (1 - self.beta2) * (grads[k]**2)
-                # 3. Compute bias-corrected first moment estimate
-                m_hat = self.m[k] / (1 - self.beta1**self.t)
-                # 4. Compute bias-corrected second raw moment estimate
-                v_hat = self.v[k] / (1 - self.beta2**self.t)
-                # 5. Update parameters
-                params[k] -= self.lr * m_hat / (np.sqrt(v_hat) + self.epsilon)
-
-class TitanBrain:
-    """
-    The 'Princess' Upgrade.
-    Architecture: Deep Dueling DQN with 2 Hidden Layers + Adam Optimizer.
-    """
-    def __init__(self, state_size=5, action_size=4, buffer_size=20000, hidden_size=128):
+class AdvancedMind:
+    def __init__(self, state_size=5, action_size=4, buffer_size=10000, hidden_size=64):
+        # State: [AgentX, AgentY, TargetX, TargetY, Energy]
         self.state_size = state_size
         self.action_size = action_size
-        # Increased hidden size for 'Deep' thought
-        self.hidden_1 = hidden_size 
-        self.hidden_2 = int(hidden_size / 2) 
+        self.hidden_size = hidden_size
+        self.memory = PrioritizedReplayBuffer(buffer_size) 
         
-        self.memory = PrioritizedReplayBuffer(buffer_size)
-        
-        # Hyperparameters
-        self.gamma = 0.98        # Higher foresight
+        # Hyperparameters (The Snappy Settings)
+        self.gamma = 0.95    
         self.epsilon = 1.0   
         self.epsilon_min = 0.05
-        self.epsilon_decay = 0.995 # Slower decay for more exploration
-        self.learning_rate = 0.001 
+        self.epsilon_decay = 0.96 # Fast decay to stop being random quickly
+        self.learning_rate = 0.01 # High learning rate for instant reactions
         self.beta = 0.4 
         self.beta_increment = 0.001
         
-        # Initialize Networks with He-Initialization (Better for ReLU)
+        # Dual Networks (Online + Target for stability)
         self.online_net = self.init_network()
         self.target_net = self.init_network()
-        
-        # Attach Optimizers (One per network isn't needed, just one for Online)
-        self.optimizer = AdamOptimizer(self.online_net, lr=self.learning_rate)
-        
         self.update_target_network()
 
     def init_network(self):
-        # He-Initialization: randn * sqrt(2/n)
+        # Architecture: Shallow Dueling DQN (Faster for simple grids)
         return {
-            # Layer 1: Input -> Hidden 1
-            'W1': np.random.randn(self.state_size, self.hidden_1) * np.sqrt(2/self.state_size),
-            'b1': np.zeros((1, self.hidden_1)),
-            
-            # Layer 2: Hidden 1 -> Hidden 2 (The "Deep" Layer)
-            'W2': np.random.randn(self.hidden_1, self.hidden_2) * np.sqrt(2/self.hidden_1),
-            'b2': np.zeros((1, self.hidden_2)),
-            
-            # Dueling Stream: Value (State Value)
-            'W_val': np.random.randn(self.hidden_2, 1) * np.sqrt(2/self.hidden_2),
+            'W1': np.random.randn(self.state_size, self.hidden_size) / np.sqrt(self.state_size),
+            'b1': np.zeros((1, self.hidden_size)),
+            'W_val': np.random.randn(self.hidden_size, 1) / np.sqrt(self.hidden_size),     
             'b_val': np.zeros((1, 1)),
-            
-            # Dueling Stream: Advantage (Action Value)
-            'W_adv': np.random.randn(self.hidden_2, self.action_size) * np.sqrt(2/self.hidden_2),
+            'W_adv': np.random.randn(self.hidden_size, self.action_size) / np.sqrt(self.hidden_size), 
             'b_adv': np.zeros((1, self.action_size))
         }
 
@@ -310,33 +262,26 @@ class TitanBrain:
 
     def relu(self, z):
         return np.maximum(0, z)
-        
-    def relu_derivative(self, z):
-        return (z > 0).astype(float)
 
     def forward(self, state, network):
         if state.ndim == 1: state = state.reshape(1, -1)
         
-        # Layer 1
+        # Shared Layer
         z1 = np.dot(state, network['W1']) + network['b1']
         a1 = self.relu(z1)
         
-        # Layer 2 (Deep abstraction)
-        z2 = np.dot(a1, network['W2']) + network['b2']
-        a2 = self.relu(z2)
-        
-        # Dueling Heads
-        val = np.dot(a2, network['W_val']) + network['b_val']
-        adv = np.dot(a2, network['W_adv']) + network['b_adv']
+        # Dueling Streams
+        val = np.dot(a1, network['W_val']) + network['b_val'] 
+        adv = np.dot(a1, network['W_adv']) + network['b_adv'] 
         
         # Aggregation
         q_values = val + (adv - np.mean(adv, axis=1, keepdims=True))
-        return q_values, a1, a2, z1, z2
+        return q_values, a1
 
     def act(self, state, training=True):
         if training and np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
-        q_values, _, _, _, _ = self.forward(state, self.online_net)
+        q_values, _ = self.forward(state, self.online_net)
         return np.argmax(q_values[0])
 
     def remember(self, state, action, reward, next_state, done):
@@ -346,86 +291,57 @@ class TitanBrain:
         if len(self.memory) < batch_size: return 0, 0
         
         batch, indices, weights = self.memory.sample(batch_size, self.beta)
-        self.beta = min(1.0, self.beta + self.beta_increment)
+        self.beta = min(1.0, self.beta + self.beta_increment) 
         
-        # Accumulators for gradients
-        grads = {k: np.zeros_like(v) for k, v in self.online_net.items()}
-        total_loss = 0
+        loss_val = 0
         new_priorities = []
         
+        # The Simple SGD Update Loop (No Adam overhead)
         for i, (state, action, reward, next_state, done) in enumerate(batch):
             state = state.reshape(1, -1)
             next_state = next_state.reshape(1, -1)
             
-            # 1. Double DQN Target
+            # 1. Calculate Target
             target = reward
             if not done:
-                # Select action using Online Net
-                next_q_online, _, _, _, _ = self.forward(next_state, self.online_net)
-                best_action = np.argmax(next_q_online[0])
-                # Evaluate action using Target Net
-                next_q_target, _, _, _, _ = self.forward(next_state, self.target_net)
-                target = reward + self.gamma * next_q_target[0][best_action]
+                next_q_online, _ = self.forward(next_state, self.online_net)
+                best_next_action = np.argmax(next_q_online[0])
+                next_q_target, _ = self.forward(next_state, self.target_net)
+                target = reward + self.gamma * next_q_target[0][best_next_action]
             
             # 2. Forward Pass
-            current_q, a1, a2, z1, z2 = self.forward(state, self.online_net)
+            current_q, a1 = self.forward(state, self.online_net)
             
-            # 3. Huber Loss Calculation
+            # 3. Calculate Error
             td_error = target - current_q[0][action]
             new_priorities.append(abs(td_error))
             
-            # Huber Loss derivative clipping
-            error_clipped = np.clip(td_error, -1.0, 1.0)
-            weighted_error = error_clipped * weights[i]
+            # 4. Backpropagation (Manual Gradient Descent)
+            weighted_error = td_error * weights[i]
+            loss_val += weighted_error ** 2
             
-            total_loss += weighted_error ** 2
-            
-            # 4. Backpropagation (Deep Network)
-            
-            # -- Output Layer Gradients --
-            grad_val = weighted_error * a2.T # (hidden2, 1)
+            grad_val = weighted_error * a1.T 
             grad_adv = np.zeros_like(self.online_net['W_adv'])
-            grad_adv[:, action] = weighted_error * a2[0] 
+            grad_adv[:, action] = weighted_error * a1[0] 
             
-            # -- Propagate to Hidden Layer 2 --
-            # Error comes from both Val and Adv heads
-            error_at_h2 = (np.dot(self.online_net['W_val'], weighted_error) + 
-                           np.dot(self.online_net['W_adv'][:, action].reshape(-1, 1), weighted_error)).T
+            error_from_val = np.dot(self.online_net['W_val'], weighted_error) 
+            error_from_adv = np.dot(self.online_net['W_adv'][:, action].reshape(-1, 1), weighted_error)
+            total_error_at_hidden = (error_from_val + error_from_adv).T 
+            total_error_at_hidden[a1 <= 0] = 0 # ReLU derivative
             
-            # Apply ReLU derivative for Layer 2
-            delta_2 = error_at_h2 * self.relu_derivative(z2)
+            grad_w1 = np.dot(state.T, total_error_at_hidden)
             
-            grad_w2 = np.dot(a1.T, delta_2)
-            grad_b2 = delta_2
-            
-            # -- Propagate to Hidden Layer 1 (The new deep layer) --
-            error_at_h1 = np.dot(delta_2, self.online_net['W2'].T)
-            delta_1 = error_at_h1 * self.relu_derivative(z1)
-            
-            grad_w1 = np.dot(state.T, delta_1)
-            grad_b1 = delta_1
-            
-            # Accumulate
-            grads['W_val'] += grad_val
-            grads['W_adv'] += grad_adv
-            grads['b_val'] += weighted_error # Bias gradient is just the error
-            grads['b_adv'][:, action] += weighted_error
-            grads['W2'] += grad_w2
-            grads['b2'] += grad_b2
-            grads['W1'] += grad_w1
-            grads['b1'] += grad_b1
-
-        # 5. Optimization Step (ADAM)
-        # Average gradients across batch
-        for k in grads: grads[k] /= batch_size
-        self.optimizer.update(self.online_net, grads)
+            # Update Weights
+            self.online_net['W_val'] += self.learning_rate * grad_val
+            self.online_net['W_adv'] += self.learning_rate * grad_adv
+            self.online_net['W1']    += self.learning_rate * grad_w1
 
         self.memory.update_priorities(indices, new_priorities)
         
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
-        return total_loss / batch_size, np.mean(new_priorities)
+        return loss_val / batch_size, np.mean(new_priorities)
 
 # ==========================================
 # 3. EMOTION & PERSONALITY ENGINE
@@ -521,13 +437,17 @@ if 'mind' in st.session_state:
         if 'soul' in st.session_state: del st.session_state['soul']
         st.rerun() # Restart to apply changes
 
-# 2. Initialize Mind (Using TitanBrain)
+
 if 'mind' not in st.session_state:
-    # IMPORTANT: Make sure you are using TitanBrain here, not AdvancedMind
-    st.session_state.mind = TitanBrain(
+    st.session_state.mind = AdvancedMind(
         buffer_size=st.session_state.config['buffer_size'], 
         hidden_size=st.session_state.config['hidden_size']
     )
+
+# 2. Initialize Mind (Using TitanBrain)
+if 'mind' in st.session_state and hasattr(st.session_state.mind, 'optimizer'):
+    del st.session_state['mind'] # Remove the lazy TitanBrain
+    
     st.session_state.soul = AGICore() 
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
@@ -662,172 +582,55 @@ def process_step():
 #  ROBUST SAVE / LOAD SYSTEM (No Pickle)
 # ==========================================
 def save_brain():
-    """Saves state using JSON (metadata) and NPZ (arrays) inside a ZIP."""
-    
-    # 1. PREPARE METADATA (JSON safe)
-    # We convert numpy scalars to native python types (float/int) for JSON compliance
     metadata = {
-        'version': 3.0,
+        'version': 3.1, 
         'wins': int(st.session_state.wins),
         'steps': int(st.session_state.step_count),
         'epsilon': float(st.session_state.mind.epsilon),
-        'beta': float(st.session_state.mind.beta),
-        'soul': {
-            'name': st.session_state.soul.user_name,
-            'rel': int(st.session_state.soul.relationship_score),
-            'mood': st.session_state.soul.current_mood,
-            'energy': float(st.session_state.soul.energy)
-        },
         'config': st.session_state.config,
-        # Save history as simple lists
+        'soul': { 'name': st.session_state.soul.user_name, 'rel': st.session_state.soul.relationship_score },
         'loss_hist': [float(x) for x in st.session_state.loss_history],
         'reward_hist': [float(x) for x in st.session_state.reward_history]
     }
-
-    # 2. PREPARE MEMORY (Convert Deque of Tuples -> Separate Numpy Arrays)
-    # This is much faster and safer than pickling objects
-    buffer_list = list(st.session_state.mind.memory.buffer)
-    if len(buffer_list) > 0:
-        mem_states = np.array([x[0] for x in buffer_list])
-        mem_actions = np.array([x[1] for x in buffer_list])
-        mem_rewards = np.array([x[2] for x in buffer_list])
-        mem_next_states = np.array([x[3] for x in buffer_list])
-        mem_dones = np.array([x[4] for x in buffer_list])
-        mem_priorities = st.session_state.mind.memory.priorities
-        mem_pos = np.array([st.session_state.mind.memory.pos])
-    else:
-        # Handle empty memory case
-        mem_states = np.array([])
-        mem_actions = np.array([]) 
-        mem_rewards = np.array([])
-        mem_next_states = np.array([])
-        mem_dones = np.array([])
-        mem_priorities = np.zeros(st.session_state.config['buffer_size'])
-        mem_pos = np.array([0])
-
-    # 3. CREATE ZIP IN MEMORY
-    zip_buffer = io.BytesIO()
     
+    zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        # A. Write Metadata JSON
         zf.writestr("metadata.json", json.dumps(metadata, indent=4))
         
-        # B. Write Neural Weights (Online Net)
+        # Save Weights (Just the Arrays)
         weights_buffer = io.BytesIO()
         np.savez(weights_buffer, **st.session_state.mind.online_net)
         zf.writestr("online_net.npz", weights_buffer.getvalue())
         
-        # C. Write Target Net
+        # Save Target
         target_buffer = io.BytesIO()
         np.savez(target_buffer, **st.session_state.mind.target_net)
         zf.writestr("target_net.npz", target_buffer.getvalue())
-        
-        # D. Write Optimizer State
-        opt_buffer = io.BytesIO()
-        np.savez(opt_buffer, 
-                 t=np.array([st.session_state.mind.optimizer.t]),
-                 **{f"m_{k}": v for k, v in st.session_state.mind.optimizer.m.items()},
-                 **{f"v_{k}": v for k, v in st.session_state.mind.optimizer.v.items()}) # Merge dicts hack
-        # Note: We split m and v keys to save in one file
-        # Actually simpler: save m and v in separate files or loops. 
-        # Let's do separate files for clarity to avoid key collisions.
-        
-        # Saving Optimizer M (Momentum)
-        m_buffer = io.BytesIO()
-        np.savez(m_buffer, **st.session_state.mind.optimizer.m)
-        zf.writestr("opt_m.npz", m_buffer.getvalue())
-
-        # Saving Optimizer V (Velocity)
-        v_buffer = io.BytesIO()
-        np.savez(v_buffer, **st.session_state.mind.optimizer.v)
-        zf.writestr("opt_v.npz", v_buffer.getvalue())
-
-        # E. Write Memory
-        mem_buffer = io.BytesIO()
-        np.savez(mem_buffer, 
-                 states=mem_states, actions=mem_actions, 
-                 rewards=mem_rewards, next_states=mem_next_states, 
-                 dones=mem_dones, priorities=mem_priorities, pos=mem_pos)
-        zf.writestr("memory.npz", mem_buffer.getvalue())
 
     return zip_buffer.getvalue()
 
 def load_brain(uploaded_file):
-    """Restores state from the 'Safe' ZIP format."""
     try:
         with zipfile.ZipFile(uploaded_file, "r") as z:
-            # 1. LOAD METADATA
             with z.open("metadata.json") as f:
                 meta = json.load(f)
-            
-            # Apply Config First
             st.session_state.config.update(meta['config'])
-            
-            # Apply Stats
-            st.session_state.wins = meta['wins']
-            st.session_state.step_count = meta['steps']
-            st.session_state.loss_history = meta['loss_hist']
-            st.session_state.reward_history = meta['reward_hist']
-            
-            # Apply Soul
-            st.session_state.soul.user_name = meta['soul']['name']
-            st.session_state.soul.relationship_score = meta['soul']['rel']
-            st.session_state.soul.current_mood = meta['soul']['mood']
-            st.session_state.soul.energy = meta['soul']['energy']
-            
-            # Apply Mind Scalars
             st.session_state.mind.epsilon = meta['epsilon']
-            st.session_state.mind.beta = meta['beta']
             
-            # 2. LOAD WEIGHTS (Using np.load)
-            # Helper to read .npz from zip
+            # Load Weights
             def load_npz(filename):
                 with z.open(filename) as f:
-                    buf = io.BytesIO(f.read())
-                    return np.load(buf)
+                    return np.load(io.BytesIO(f.read()))
 
-            # Online Net
             raw_online = load_npz("online_net.npz")
             st.session_state.mind.online_net = {k: raw_online[k] for k in raw_online.files}
-
-            # Target Net
+            
             raw_target = load_npz("target_net.npz")
             st.session_state.mind.target_net = {k: raw_target[k] for k in raw_target.files}
-            
-            # Optimizer
-            raw_m = load_npz("opt_m.npz")
-            st.session_state.mind.optimizer.m = {k: raw_m[k] for k in raw_m.files}
-            
-            raw_v = load_npz("opt_v.npz")
-            st.session_state.mind.optimizer.v = {k: raw_v[k] for k in raw_v.files}
-            
-            # 3. LOAD MEMORY
-            mem_data = load_npz("memory.npz")
-            
-            # Reconstruct Buffer (The tricky part!)
-            if 'states' in mem_data and len(mem_data['states']) > 0:
-                s = mem_data['states']
-                a = mem_data['actions']
-                r = mem_data['rewards']
-                ns = mem_data['next_states']
-                d = mem_data['dones']
-                
-                # Zip them back into a list of tuples
-                # We iterate up to the stored length
-                reconstructed_buffer = []
-                for i in range(len(s)):
-                    reconstructed_buffer.append( (s[i], int(a[i]), r[i], ns[i], bool(d[i])) )
-                
-                st.session_state.mind.memory.buffer = reconstructed_buffer
-                st.session_state.mind.memory.priorities = mem_data['priorities']
-                st.session_state.mind.memory.pos = int(mem_data['pos'][0])
 
-        st.toast("✅ Brain Successfully Implanted! No Errors.", icon="🧠")
-        time.sleep(1)
-        
+        st.toast("✅ Simple Brain Restored!", icon="🧠")
     except Exception as e:
-        st.error(f"Critical System Failure during Load: {e}")
-
+        st.error(f"Load Error: {e}")
 
 
 
@@ -837,7 +640,7 @@ def reset_simulation():
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.soul = AGICore() # Reset the AI Personality
-    st.session_state.mind = TitanBrain(
+    st.session_state.mind = AdvancedMind( # Use AdvancedMind here!
         buffer_size=st.session_state.config.get('buffer_size', 10000), 
         hidden_size=st.session_state.config.get('hidden_size', 64)
     )
