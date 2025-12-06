@@ -606,16 +606,34 @@ def process_step():
     
     # 3. Physics Update (Continuous Movement simulation)
     move_speed = st.session_state.config.get("move_speed", 8.0)
+    
+    # Store old position in case we need to revert (collision)
     old_pos = st.session_state.agent_pos.copy()
     
+    # Proposed new position based on action
     # Grid Logic: 0=Up, 1=Down, 2=Left, 3=Right
-    if action == 0: st.session_state.agent_pos[1] -= move_speed 
-    elif action == 1: st.session_state.agent_pos[1] += move_speed 
-    elif action == 2: st.session_state.agent_pos[0] -= move_speed 
-    elif action == 3: st.session_state.agent_pos[0] += move_speed 
+    proposed_pos = st.session_state.agent_pos.copy()
     
-    # --- NEW: WALL BOUNCE LOGIC (Prevents Corner Glue) ---
+    if action == 0: proposed_pos[1] -= move_speed 
+    elif action == 1: proposed_pos[1] += move_speed 
+    elif action == 2: proposed_pos[0] -= move_speed 
+    elif action == 3: proposed_pos[0] += move_speed 
+    
+    # --- COLLISION DETECTION (New Code) ---
+    # Check if the proposed move hits a maze wall
     hit_wall = False
+    maze = st.session_state.get('maze_grid', None)
+    
+    if maze is not None and check_wall_collision(proposed_pos, maze):
+        hit_wall = True
+        # Bounce effect: Stay at old_pos, maybe add a small random jitter?
+        # For now, we just don't move.
+        st.session_state.agent_pos = old_pos 
+    else:
+        # No wall, so commit the move
+        st.session_state.agent_pos = proposed_pos
+
+    # --- BOUNDARY CHECKS (Keep existing logic) ---
     if st.session_state.agent_pos[0] < 0:
         st.session_state.agent_pos[0] = 5.0 # Bounce back in
         hit_wall = True
@@ -644,7 +662,8 @@ def process_step():
     
     # Penalty for hitting walls (Teaches me to stay in bounds)
     if hit_wall:
-        reward -= 5.0 
+        reward -= 10.0 # Increased penalty for hitting walls!
+        st.session_state.soul.thought_process = "Ouch! That is a wall."
     
     # Event: Reached Target
     if dist_after < st.session_state.config.get("hug_distance", 8.0):
@@ -883,8 +902,9 @@ with st.sidebar:
         c['graph_points'] = st.slider("Graph History Length", 100, 2000, c.get('graph_points', 500), 50)
 
 
-    with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=False):
-        enable_maze = st.checkbox("Initialize Maze Mode")
+    with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=True):
+        # I added value=True so it starts ON by default
+        enable_maze = st.checkbox("Initialize Maze Mode", value=True)
         
         if enable_maze:
             # LAZY LOADING: Only generate if it doesn't exist yet
