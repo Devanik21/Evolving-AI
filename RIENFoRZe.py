@@ -476,14 +476,39 @@ class PersonalityCore:
 # ==========================================
 
 # 1. Initialize Configuration FIRST
+# ==========================================
+# 4. APP STATE INITIALIZATION (Hyper-Tuned Version)
+# ==========================================
+
+# 1. Initialize Configuration FIRST
 if 'config' not in st.session_state:
     st.session_state.config = {
-        "sim_speed": 0.1, "move_speed": 8.0, "energy_decay": 0.1, "target_update_freq": 50,
-        "shaping_multiplier": 2.0, "hug_reward": 100.0, "hug_distance": 8.0,
-        "learning_rate": 0.005, "gamma": 0.95, "epsilon_decay": 0.99, "epsilon_min": 0.05,
-        "batch_size": 32,
+        # MOVEMENT
+        "sim_speed": 0.05,       # Faster animation
+        "move_speed": 12.0,      # Faster movement (Agent covers ground quickly)
+        "energy_decay": 0.05,    # Slower energy loss (Less punishment)
+        
+        # REWARDS
+        "shaping_multiplier": 5.0, # HUGE reward for moving towards target (Guidance)
+        "hug_reward": 200.0,       # Big payout for winning
+        "hug_distance": 10.0,      # Easier to catch the target
+        
+        # BRAIN PARAMETERS (The Secret Sauce)
+        "learning_rate": 0.01,    # 10x Higher! (Force it to learn FAST)
+        "gamma": 0.90,            # Lower Gamma (Care about NOW, not later)
+        "epsilon_decay": 0.98,    # Decay exploration fast (Stop acting random quickly)
+        "epsilon_min": 0.01,      # Allow it to use 99% of its brain eventually
+        
+        # ARCHITECTURE
+        "batch_size": 64,         # Learn from more memories at once
+        "hidden_size": 32,        # SMALLER BRAIN = Faster Learning (32 is enough!)
+        "buffer_size": 5000,      # Smaller memory (Keep only recent/relevant stuff)
+        
+        # PER (Memory Priority)
         "per_alpha": 0.6, "per_beta": 0.4, "per_beta_increment": 0.001,
-        "hidden_size": 64, "buffer_size": 10000,
+        
+        # VISUALS
+        "target_update_freq": 20, # Update the "Goal" network more often
         "grid_h": 15, "grid_w": 40, "graph_points": 500
     }
 
@@ -912,6 +937,7 @@ with st.sidebar:
         c['graph_points'] = st.slider("Graph History Length", 100, 2000, c.get('graph_points', 500), 50)
 
     # --- Update mind's parameters if they change ---
+    # --- Update mind's parameters if they change ---
     st.session_state.mind.learning_rate = lr
     st.session_state.mind.epsilon_decay = ed
     st.session_state.mind.gamma = g
@@ -919,6 +945,10 @@ with st.sidebar:
     st.session_state.mind.memory.prob_alpha = c['per_alpha']
     st.session_state.mind.beta = c['per_beta']
     st.session_state.mind.beta_increment = c['per_beta_increment']
+    
+    # [CRITICAL FIX]: Connect the slider to the actual Optimizer!
+    if hasattr(st.session_state.mind, 'optimizer'):
+        st.session_state.mind.optimizer.lr = lr
 
 # Main Interaction Area
 row1_1, row1_2 = st.columns([2, 1])
