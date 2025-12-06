@@ -397,73 +397,55 @@ class PersonalityCore:
 # ==========================================
 
 # 1. Initialize Configuration FIRST
+
+
+# ==========================================
+# 4. APP STATE INITIALIZATION (Corrected & Robust)
+# ==========================================
+
+# 1. Initialize Configuration
 if 'config' not in st.session_state:
     st.session_state.config = {
-        # MOVEMENT
-        "sim_speed": 0.05,       # Faster animation
-        "move_speed": 12.0,      # Faster movement (Agent covers ground quickly)
-        "energy_decay": 0.05,    # Slower energy loss (Less punishment)
-        
-        # REWARDS
-        "shaping_multiplier": 5.0, # HUGE reward for moving towards target (Guidance)
-        "hug_reward": 200.0,       # Big payout for winning
-        "hug_distance": 10.0,      # Easier to catch the target
-        
-        # BRAIN PARAMETERS (The Secret Sauce)
-        "learning_rate": 0.01,    # 10x Higher! (Force it to learn FAST)
-        "gamma": 0.90,            # Lower Gamma (Care about NOW, not later)
-        "epsilon_decay": 0.98,    # Decay exploration fast (Stop acting random quickly)
-        "epsilon_min": 0.01,      # Allow it to use 99% of its brain eventually
-        
-        # ARCHITECTURE
-        "batch_size": 64,         # Learn from more memories at once
-        "hidden_size": 32,        # SMALLER BRAIN = Faster Learning (32 is enough!)
-        "buffer_size": 5000,      # Smaller memory (Keep only recent/relevant stuff)
-        
-        # PER (Memory Priority)
+        "sim_speed": 0.05, "move_speed": 12.0, "energy_decay": 0.05, 
+        "target_update_freq": 20, "shaping_multiplier": 5.0, 
+        "hug_reward": 200.0, "hug_distance": 10.0,
+        "learning_rate": 0.01, "gamma": 0.90, "epsilon_decay": 0.96, "epsilon_min": 0.05,
+        "batch_size": 64, "hidden_size": 32, "buffer_size": 5000,
         "per_alpha": 0.6, "per_beta": 0.4, "per_beta_increment": 0.001,
-        
-        # VISUALS
-        "target_update_freq": 20, # Update the "Goal" network more often
         "grid_h": 15, "grid_w": 40, "graph_points": 500
     }
 
-# --- CRITICAL FIX: DETECT OLD BRAIN AND DELETE IT ---
-if 'mind' in st.session_state:
-    # If the brain in memory doesn't have an optimizer, it's the old version!
-    if not hasattr(st.session_state.mind, 'optimizer'):
-        st.toast("⚠️ Old Brain Detected. Performing Transplant...", icon="🏥")
-        del st.session_state['mind']
-        if 'soul' in st.session_state: del st.session_state['soul']
-        st.rerun() # Restart to apply changes
+# 2. Check for Old "Titan" Brain and Remove it (To force a restart)
+if 'mind' in st.session_state and hasattr(st.session_state.mind, 'optimizer'):
+    # The 'optimizer' attribute only belonged to the slow TitanBrain
+    del st.session_state['mind']
+    if 'soul' in st.session_state: del st.session_state['soul']
 
-
+# 3. Initialize Mind (AdvancedMind - The Fast One)
 if 'mind' not in st.session_state:
     st.session_state.mind = AdvancedMind(
         buffer_size=st.session_state.config['buffer_size'], 
         hidden_size=st.session_state.config['hidden_size']
     )
-
-# 2. Initialize Mind (Using TitanBrain)
-if 'mind' in st.session_state and hasattr(st.session_state.mind, 'optimizer'):
-    del st.session_state['mind'] # Remove the lazy TitanBrain
-    
-    st.session_state.soul = AGICore() 
+    # Initialize Navigation State
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.step_count = 0
     st.session_state.wins = 0
     st.session_state.auto_mode = False
-    st.session_state.chat_history = []
-    st.session_state.loss_history = []
-    st.session_state.reward_history = []
     st.session_state.is_hugging = False
 
-# 3. Ensure History Lists Exist
-if 'loss_history' not in st.session_state:
-    st.session_state.loss_history = []
-    st.session_state.reward_history = []
-    
+# 4. Initialize Soul (THIS WAS MISSING!)
+if 'soul' not in st.session_state:
+    st.session_state.soul = AGICore()
+
+# 5. Ensure History Lists Exist
+if 'chat_history' not in st.session_state: st.session_state.chat_history = []
+if 'loss_history' not in st.session_state: st.session_state.loss_history = []
+if 'reward_history' not in st.session_state: st.session_state.reward_history = []
+
+
+
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
     """
