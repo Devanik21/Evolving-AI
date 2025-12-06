@@ -6,10 +6,6 @@ import time
 import pandas as pd
 import re # For parsing user commands
 
-import json
-import zipfile
-import io
-
 # ==========================================
 # 1. ADVANCED CONFIGURATION & CSS
 # ==========================================
@@ -219,41 +215,89 @@ class AGICore:
         return reply
 
 
-
-
 # ==========================================
-# 2. THE ADVANCED MIND (The "Simple" Brain - Restored)
+# 2. THE ADVANCED MIND (Titan Architecture)
 # ==========================================
-class AdvancedMind:
-    def __init__(self, state_size=5, action_size=4, buffer_size=10000, hidden_size=64):
-        # State: [AgentX, AgentY, TargetX, TargetY, Energy]
+
+class AdamOptimizer:
+    """
+    Implements the Adam algorithm (Adaptive Moment Estimation).
+    This gives the AI 'momentum' in learning, allowing it to navigate 
+    complex strategies much faster than standard SGD.
+    """
+    def __init__(self, params, lr=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
+        self.lr = lr
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.m = {k: np.zeros_like(v) for k, v in params.items()}
+        self.v = {k: np.zeros_like(v) for k, v in params.items()}
+        self.t = 0
+
+    def update(self, params, grads):
+        self.t += 1
+        for k in params.keys():
+            if k in grads:
+                # 1. Update biased first moment estimate
+                self.m[k] = self.beta1 * self.m[k] + (1 - self.beta1) * grads[k]
+                # 2. Update biased second raw moment estimate
+                self.v[k] = self.beta2 * self.v[k] + (1 - self.beta2) * (grads[k]**2)
+                # 3. Compute bias-corrected first moment estimate
+                m_hat = self.m[k] / (1 - self.beta1**self.t)
+                # 4. Compute bias-corrected second raw moment estimate
+                v_hat = self.v[k] / (1 - self.beta2**self.t)
+                # 5. Update parameters
+                params[k] -= self.lr * m_hat / (np.sqrt(v_hat) + self.epsilon)
+
+class TitanBrain:
+    """
+    The 'Princess' Upgrade.
+    Architecture: Deep Dueling DQN with 2 Hidden Layers + Adam Optimizer.
+    """
+    def __init__(self, state_size=5, action_size=4, buffer_size=20000, hidden_size=128):
         self.state_size = state_size
         self.action_size = action_size
-        self.hidden_size = hidden_size
-        self.memory = PrioritizedReplayBuffer(buffer_size) 
+        # Increased hidden size for 'Deep' thought
+        self.hidden_1 = hidden_size 
+        self.hidden_2 = int(hidden_size / 2) 
         
-        # Hyperparameters (The Snappy Settings)
-        self.gamma = 0.95    
+        self.memory = PrioritizedReplayBuffer(buffer_size)
+        
+        # Hyperparameters
+        self.gamma = 0.98        # Higher foresight
         self.epsilon = 1.0   
         self.epsilon_min = 0.05
-        self.epsilon_decay = 0.96 # Fast decay to stop being random quickly
-        self.learning_rate = 0.01 # High learning rate for instant reactions
+        self.epsilon_decay = 0.995 # Slower decay for more exploration
+        self.learning_rate = 0.001 
         self.beta = 0.4 
         self.beta_increment = 0.001
         
-        # Dual Networks (Online + Target for stability)
+        # Initialize Networks with He-Initialization (Better for ReLU)
         self.online_net = self.init_network()
         self.target_net = self.init_network()
+        
+        # Attach Optimizers (One per network isn't needed, just one for Online)
+        self.optimizer = AdamOptimizer(self.online_net, lr=self.learning_rate)
+        
         self.update_target_network()
 
     def init_network(self):
-        # Architecture: Shallow Dueling DQN (Faster for simple grids)
+        # He-Initialization: randn * sqrt(2/n)
         return {
-            'W1': np.random.randn(self.state_size, self.hidden_size) / np.sqrt(self.state_size),
-            'b1': np.zeros((1, self.hidden_size)),
-            'W_val': np.random.randn(self.hidden_size, 1) / np.sqrt(self.hidden_size),     
+            # Layer 1: Input -> Hidden 1
+            'W1': np.random.randn(self.state_size, self.hidden_1) * np.sqrt(2/self.state_size),
+            'b1': np.zeros((1, self.hidden_1)),
+            
+            # Layer 2: Hidden 1 -> Hidden 2 (The "Deep" Layer)
+            'W2': np.random.randn(self.hidden_1, self.hidden_2) * np.sqrt(2/self.hidden_1),
+            'b2': np.zeros((1, self.hidden_2)),
+            
+            # Dueling Stream: Value (State Value)
+            'W_val': np.random.randn(self.hidden_2, 1) * np.sqrt(2/self.hidden_2),
             'b_val': np.zeros((1, 1)),
-            'W_adv': np.random.randn(self.hidden_size, self.action_size) / np.sqrt(self.hidden_size), 
+            
+            # Dueling Stream: Advantage (Action Value)
+            'W_adv': np.random.randn(self.hidden_2, self.action_size) * np.sqrt(2/self.hidden_2),
             'b_adv': np.zeros((1, self.action_size))
         }
 
@@ -262,26 +306,33 @@ class AdvancedMind:
 
     def relu(self, z):
         return np.maximum(0, z)
+        
+    def relu_derivative(self, z):
+        return (z > 0).astype(float)
 
     def forward(self, state, network):
         if state.ndim == 1: state = state.reshape(1, -1)
         
-        # Shared Layer
+        # Layer 1
         z1 = np.dot(state, network['W1']) + network['b1']
         a1 = self.relu(z1)
         
-        # Dueling Streams
-        val = np.dot(a1, network['W_val']) + network['b_val'] 
-        adv = np.dot(a1, network['W_adv']) + network['b_adv'] 
+        # Layer 2 (Deep abstraction)
+        z2 = np.dot(a1, network['W2']) + network['b2']
+        a2 = self.relu(z2)
+        
+        # Dueling Heads
+        val = np.dot(a2, network['W_val']) + network['b_val']
+        adv = np.dot(a2, network['W_adv']) + network['b_adv']
         
         # Aggregation
         q_values = val + (adv - np.mean(adv, axis=1, keepdims=True))
-        return q_values, a1
+        return q_values, a1, a2, z1, z2
 
     def act(self, state, training=True):
         if training and np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
-        q_values, _ = self.forward(state, self.online_net)
+        q_values, _, _, _, _ = self.forward(state, self.online_net)
         return np.argmax(q_values[0])
 
     def remember(self, state, action, reward, next_state, done):
@@ -291,57 +342,86 @@ class AdvancedMind:
         if len(self.memory) < batch_size: return 0, 0
         
         batch, indices, weights = self.memory.sample(batch_size, self.beta)
-        self.beta = min(1.0, self.beta + self.beta_increment) 
+        self.beta = min(1.0, self.beta + self.beta_increment)
         
-        loss_val = 0
+        # Accumulators for gradients
+        grads = {k: np.zeros_like(v) for k, v in self.online_net.items()}
+        total_loss = 0
         new_priorities = []
         
-        # The Simple SGD Update Loop (No Adam overhead)
         for i, (state, action, reward, next_state, done) in enumerate(batch):
             state = state.reshape(1, -1)
             next_state = next_state.reshape(1, -1)
             
-            # 1. Calculate Target
+            # 1. Double DQN Target
             target = reward
             if not done:
-                next_q_online, _ = self.forward(next_state, self.online_net)
-                best_next_action = np.argmax(next_q_online[0])
-                next_q_target, _ = self.forward(next_state, self.target_net)
-                target = reward + self.gamma * next_q_target[0][best_next_action]
+                # Select action using Online Net
+                next_q_online, _, _, _, _ = self.forward(next_state, self.online_net)
+                best_action = np.argmax(next_q_online[0])
+                # Evaluate action using Target Net
+                next_q_target, _, _, _, _ = self.forward(next_state, self.target_net)
+                target = reward + self.gamma * next_q_target[0][best_action]
             
             # 2. Forward Pass
-            current_q, a1 = self.forward(state, self.online_net)
+            current_q, a1, a2, z1, z2 = self.forward(state, self.online_net)
             
-            # 3. Calculate Error
+            # 3. Huber Loss Calculation
             td_error = target - current_q[0][action]
             new_priorities.append(abs(td_error))
             
-            # 4. Backpropagation (Manual Gradient Descent)
-            weighted_error = td_error * weights[i]
-            loss_val += weighted_error ** 2
+            # Huber Loss derivative clipping
+            error_clipped = np.clip(td_error, -1.0, 1.0)
+            weighted_error = error_clipped * weights[i]
             
-            grad_val = weighted_error * a1.T 
+            total_loss += weighted_error ** 2
+            
+            # 4. Backpropagation (Deep Network)
+            
+            # -- Output Layer Gradients --
+            grad_val = weighted_error * a2.T # (hidden2, 1)
             grad_adv = np.zeros_like(self.online_net['W_adv'])
-            grad_adv[:, action] = weighted_error * a1[0] 
+            grad_adv[:, action] = weighted_error * a2[0] 
             
-            error_from_val = np.dot(self.online_net['W_val'], weighted_error) 
-            error_from_adv = np.dot(self.online_net['W_adv'][:, action].reshape(-1, 1), weighted_error)
-            total_error_at_hidden = (error_from_val + error_from_adv).T 
-            total_error_at_hidden[a1 <= 0] = 0 # ReLU derivative
+            # -- Propagate to Hidden Layer 2 --
+            # Error comes from both Val and Adv heads
+            error_at_h2 = (np.dot(self.online_net['W_val'], weighted_error) + 
+                           np.dot(self.online_net['W_adv'][:, action].reshape(-1, 1), weighted_error)).T
             
-            grad_w1 = np.dot(state.T, total_error_at_hidden)
+            # Apply ReLU derivative for Layer 2
+            delta_2 = error_at_h2 * self.relu_derivative(z2)
             
-            # Update Weights
-            self.online_net['W_val'] += self.learning_rate * grad_val
-            self.online_net['W_adv'] += self.learning_rate * grad_adv
-            self.online_net['W1']    += self.learning_rate * grad_w1
+            grad_w2 = np.dot(a1.T, delta_2)
+            grad_b2 = delta_2
+            
+            # -- Propagate to Hidden Layer 1 (The new deep layer) --
+            error_at_h1 = np.dot(delta_2, self.online_net['W2'].T)
+            delta_1 = error_at_h1 * self.relu_derivative(z1)
+            
+            grad_w1 = np.dot(state.T, delta_1)
+            grad_b1 = delta_1
+            
+            # Accumulate
+            grads['W_val'] += grad_val
+            grads['W_adv'] += grad_adv
+            grads['b_val'] += weighted_error # Bias gradient is just the error
+            grads['b_adv'][:, action] += weighted_error
+            grads['W2'] += grad_w2
+            grads['b2'] += grad_b2
+            grads['W1'] += grad_w1
+            grads['b1'] += grad_b1
+
+        # 5. Optimization Step (ADAM)
+        # Average gradients across batch
+        for k in grads: grads[k] /= batch_size
+        self.optimizer.update(self.online_net, grads)
 
         self.memory.update_priorities(indices, new_priorities)
         
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
-        return loss_val / batch_size, np.mean(new_priorities)
+        return total_loss / batch_size, np.mean(new_priorities)
 
 # ==========================================
 # 3. EMOTION & PERSONALITY ENGINE
@@ -383,69 +463,61 @@ class PersonalityCore:
             self.last_chat = random.choice(["Ouch.", "Negative reward detected.", "I'll do better next time."])
 
 # ==========================================
-# 4. APP STATE INITIALIZATION (Corrected Order)
+# 4. APP STATE INITIALIZATION
 # ==========================================
-
-# 1. Initialize Configuration FIRST (So the brain knows what to do)
 # ==========================================
-# 4. APP STATE INITIALIZATION (Auto-Repair Version)
+# 4. APP STATE INITIALIZATION (Self-Correcting)
 # ==========================================
-
-# 1. Initialize Configuration FIRST
 # ==========================================
-# 4. APP STATE INITIALIZATION (Hyper-Tuned Version)
+# 4. APP STATE INITIALIZATION (Self-Correcting)
 # ==========================================
-
-# 1. Initialize Configuration FIRST
-
-
-# ==========================================
-# 4. APP STATE INITIALIZATION (Corrected & Robust)
-# ==========================================
-
-# 1. Initialize Configuration
-if 'config' not in st.session_state:
-    st.session_state.config = {
-        "sim_speed": 0.05, "move_speed": 12.0, "energy_decay": 0.05, 
-        "target_update_freq": 20, "shaping_multiplier": 5.0, 
-        "hug_reward": 200.0, "hug_distance": 10.0,
-        "learning_rate": 0.01, "gamma": 0.90, "epsilon_decay": 0.96, "epsilon_min": 0.05,
-        "batch_size": 64, "hidden_size": 32, "buffer_size": 5000,
-        "per_alpha": 0.6, "per_beta": 0.4, "per_beta_increment": 0.001,
-        "grid_h": 15, "grid_w": 40, "graph_points": 500
-    }
-
-# 2. Check for Old "Titan" Brain and Remove it (To force a restart)
-if 'mind' in st.session_state and hasattr(st.session_state.mind, 'optimizer'):
-    # The 'optimizer' attribute only belonged to the slow TitanBrain
-    del st.session_state['mind']
-    if 'soul' in st.session_state: del st.session_state['soul']
-
-# 3. Initialize Mind (AdvancedMind - The Fast One)
 if 'mind' not in st.session_state:
-    st.session_state.mind = AdvancedMind(
-        buffer_size=st.session_state.config['buffer_size'], 
-        hidden_size=st.session_state.config['hidden_size']
-    )
-    # Initialize Navigation State
+    st.session_state.mind = TitanBrain(buffer_size=st.session_state.config['buffer_size'], hidden_size=st.session_state.config['hidden_size'])
+    st.session_state.soul = AGICore() # Start with AGI
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.step_count = 0
     st.session_state.wins = 0
     st.session_state.auto_mode = False
+    st.session_state.chat_history = []
+    st.session_state.loss_history = []
+    st.session_state.reward_history = []
     st.session_state.is_hugging = False
+    
+    
+    # --- NEW: Add config dictionary for sidebar parameters ---
+    st.session_state.config = {
+        "sim_speed": 0.1, "move_speed": 8.0, "energy_decay": 0.1, "target_update_freq": 50,
+        "shaping_multiplier": 2.0, "hug_reward": 100.0, "hug_distance": 8.0,
+        "learning_rate": 0.005, "gamma": 0.95, "epsilon_decay": 0.99, "epsilon_min": 0.05,
+        "batch_size": 32,
+        "per_alpha": 0.6, "per_beta": 0.4, "per_beta_increment": 0.001,
+        "hidden_size": 64, "buffer_size": 10000,
+        "grid_h": 15, "grid_w": 40, "graph_points": 500
+    }
+    # Apply initial config to the mind
+    st.session_state.mind = AdvancedMind(buffer_size=st.session_state.config['buffer_size'], hidden_size=st.session_state.config['hidden_size'])
 
-# 4. Initialize Soul (THIS WAS MISSING!)
-if 'soul' not in st.session_state:
-    st.session_state.soul = AGICore()
+# --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
+# This checks if the 'soul' is missing the 'current_mood' attribute.
+# If it is missing, we force a complete brain transplant to the new AGICore.
+# --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
+# Checks if the 'soul' object is outdated or missing the new 'update' function
+if hasattr(st.session_state, 'soul'):
+    # We check if the existing object has the 'update' method. If not, it's an old version!
+    if not hasattr(st.session_state.soul, 'update') or not hasattr(st.session_state.soul, 'current_mood'):
+        st.session_state.soul = AGICore() # FORCE REBOOT
+        st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
+        time.sleep(0.5)
+        st.rerun()
 
-# 5. Ensure History Lists Exist
-if 'chat_history' not in st.session_state: st.session_state.chat_history = []
-if 'loss_history' not in st.session_state: st.session_state.loss_history = []
-if 'reward_history' not in st.session_state: st.session_state.reward_history = []
-
-
-
+# This check ensures the history lists exist even if the session state is from an older version.
+if 'loss_history' not in st.session_state:
+    st.session_state.loss_history = []
+    st.session_state.reward_history = []
+if 'config' not in st.session_state: # Hotfix for adding config to old sessions
+    st.session_state.config = {} # Will be populated by sidebar code
+    
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
     """
@@ -560,82 +632,6 @@ def process_step():
 
 
 
-# ==========================================
-#  ROBUST SAVE / LOAD SYSTEM (No Pickle)
-# ==========================================
-def save_brain():
-    metadata = {
-        'version': 3.1, 
-        'wins': int(st.session_state.wins),
-        'steps': int(st.session_state.step_count),
-        'epsilon': float(st.session_state.mind.epsilon),
-        'config': st.session_state.config,
-        'soul': { 'name': st.session_state.soul.user_name, 'rel': st.session_state.soul.relationship_score },
-        'loss_hist': [float(x) for x in st.session_state.loss_history],
-        'reward_hist': [float(x) for x in st.session_state.reward_history]
-    }
-    
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("metadata.json", json.dumps(metadata, indent=4))
-        
-        # Save Weights (Just the Arrays)
-        weights_buffer = io.BytesIO()
-        np.savez(weights_buffer, **st.session_state.mind.online_net)
-        zf.writestr("online_net.npz", weights_buffer.getvalue())
-        
-        # Save Target
-        target_buffer = io.BytesIO()
-        np.savez(target_buffer, **st.session_state.mind.target_net)
-        zf.writestr("target_net.npz", target_buffer.getvalue())
-
-    return zip_buffer.getvalue()
-
-def load_brain(uploaded_file):
-    try:
-        with zipfile.ZipFile(uploaded_file, "r") as z:
-            # 1. READ METADATA
-            with z.open("metadata.json") as f:
-                meta = json.load(f)
-            
-            # Restore Stats
-            st.session_state.step_count = meta.get('steps', 0)
-            st.session_state.wins = meta.get('wins', 0)
-            st.session_state.loss_history = meta.get('loss_hist', [])
-            st.session_state.reward_history = meta.get('reward_hist', [])
-            
-            # Restore Config & Soul
-            st.session_state.config.update(meta.get('config', {}))
-            if 'soul' in meta:
-                st.session_state.soul.user_name = meta['soul'].get('name', 'Prince')
-                st.session_state.soul.relationship_score = meta['soul'].get('rel', 50)
-            
-            # 2. LOAD WEIGHTS
-            def load_npz(filename):
-                with z.open(filename) as f:
-                    return np.load(io.BytesIO(f.read()))
-
-            raw_online = load_npz("online_net.npz")
-            st.session_state.mind.online_net = {k: raw_online[k] for k in raw_online.files}
-            
-            raw_target = load_npz("target_net.npz")
-            st.session_state.mind.target_net = {k: raw_target[k] for k in raw_target.files}
-
-            # 3. CRITICAL: INTELLIGENCE ACTIVATION 🧠
-            # Sync the target network to match the loaded brain immediately
-            st.session_state.mind.update_target_network()
-            
-            # FORCE SMART MODE: If experience > 200, force randomness (epsilon) down!
-            if st.session_state.step_count > 200:
-                st.session_state.mind.epsilon = st.session_state.config.get('epsilon_min', 0.05)
-            else:
-                st.session_state.mind.epsilon = meta.get('epsilon', 1.0)
-
-        st.toast(f"✅ Brain Restored! IQ Level (Epsilon): {st.session_state.mind.epsilon:.3f}", icon="🧠")
-        time.sleep(1)
-        
-    except Exception as e:
-        st.error(f"Load Error: {e}")
 
 
 
@@ -645,10 +641,7 @@ def reset_simulation():
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.soul = AGICore() # Reset the AI Personality
-    st.session_state.mind = AdvancedMind( # Use AdvancedMind here!
-        buffer_size=st.session_state.config.get('buffer_size', 10000), 
-        hidden_size=st.session_state.config.get('hidden_size', 64)
-    )
+    st.session_state.mind = AdvancedMind(buffer_size=st.session_state.config.get('buffer_size', 10000), hidden_size=st.session_state.config.get('hidden_size', 64)) # Reset the Neural Network
     st.session_state.step_count = 0
     st.session_state.wins = 0
     st.session_state.chat_history = []
@@ -678,40 +671,6 @@ m4.metric("Experience", st.session_state.step_count)
 with st.sidebar:
     st.header("⚙️ Control Panel")
     c = st.session_state.config # Shortcut
-
-    # ... inside st.sidebar ...
-
-    # --- NEW: SAVE / LOAD SECTION ---
-    # --- NEW: SAVE / LOAD SECTION ---
-    with st.expander("💾 Memory Card (Safe Mode)", expanded=True):
-        
-        # 1. PREPARE THE DOWNLOAD
-        if st.button("📦 Prepare Backup (.zip)"):
-            # Save the zip to the session state so it doesn't vanish!
-            st.session_state['backup_data'] = save_brain()
-            st.toast("✅ Brain Compressed & Ready!", icon="💾")
-        
-        # 2. SHOW BUTTON IF READY
-        if 'backup_data' in st.session_state:
-            st.download_button(
-                label="⬇️ Click Here to Download",
-                data=st.session_state['backup_data'],
-                file_name=f"ALIVE_Gen_{st.session_state.step_count}.zip",
-                mime="application/zip"
-            )
-
-        # 2. UPLOAD
-        uploaded_file = st.file_uploader("Upload Backup", type="zip", key="brain_loader")
-        if uploaded_file is not None:
-            if st.button("♻️ Load Memory"):
-                load_brain(uploaded_file)
-                st.rerun()
-
-                
-                st.markdown("---")
-        if st.button("🧠 Force 'Smart Mode'"):
-            st.session_state.mind.epsilon = 0.01 # 1% Randomness, 99% Brain
-            st.toast("Randomness disabled. Pure Logic activated!", icon="😎")
 
     with st.expander("🚀 Simulation & World", expanded=True):
         c['sim_speed'] = st.slider("Sim Speed (delay)", 0.0, 1.0, c.get('sim_speed', 0.1), 0.05, help="Delay between autonomous steps.")
@@ -757,7 +716,6 @@ with st.sidebar:
         c['graph_points'] = st.slider("Graph History Length", 100, 2000, c.get('graph_points', 500), 50)
 
     # --- Update mind's parameters if they change ---
-    # --- Update mind's parameters if they change ---
     st.session_state.mind.learning_rate = lr
     st.session_state.mind.epsilon_decay = ed
     st.session_state.mind.gamma = g
@@ -765,10 +723,6 @@ with st.sidebar:
     st.session_state.mind.memory.prob_alpha = c['per_alpha']
     st.session_state.mind.beta = c['per_beta']
     st.session_state.mind.beta_increment = c['per_beta_increment']
-    
-    # [CRITICAL FIX]: Connect the slider to the actual Optimizer!
-    if hasattr(st.session_state.mind, 'optimizer'):
-        st.session_state.mind.optimizer.lr = lr
 
 # Main Interaction Area
 row1_1, row1_2 = st.columns([2, 1])
