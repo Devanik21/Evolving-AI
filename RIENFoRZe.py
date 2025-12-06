@@ -641,7 +641,10 @@ def reset_simulation():
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.soul = AGICore() # Reset the AI Personality
-    st.session_state.mind = AdvancedMind(buffer_size=st.session_state.config.get('buffer_size', 10000), hidden_size=st.session_state.config.get('hidden_size', 64)) # Reset the Neural Network
+    st.session_state.mind = TitanBrain(
+        buffer_size=st.session_state.config.get('buffer_size', 10000), 
+        hidden_size=st.session_state.config.get('hidden_size', 64)
+    )
     st.session_state.step_count = 0
     st.session_state.wins = 0
     st.session_state.chat_history = []
