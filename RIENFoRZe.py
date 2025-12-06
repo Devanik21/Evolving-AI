@@ -760,12 +760,16 @@ with col_sim:
 
     
     # 4. Controls
-    col_ctrl1, col_ctrl2 = st.columns(2)
+    col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([1, 1, 1])
     if col_ctrl1.button("▶️ STEP"):
         step_environment()
         st.rerun()
         
     auto_run = col_ctrl2.checkbox("♾️ AUTO")
+    if col_ctrl3.button("🔄 RESET"):
+        reset_sim()
+        st.rerun()
+
     if auto_run:
         step_environment()
         time.sleep(0.05)
