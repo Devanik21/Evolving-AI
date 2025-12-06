@@ -467,29 +467,11 @@ class PersonalityCore:
             self.last_chat = random.choice(["Ouch.", "Negative reward detected.", "I'll do better next time."])
 
 # ==========================================
-# 4. APP STATE INITIALIZATION
+# 4. APP STATE INITIALIZATION (Corrected Order)
 # ==========================================
-# ==========================================
-# 4. APP STATE INITIALIZATION (Self-Correcting)
-# ==========================================
-# ==========================================
-# 4. APP STATE INITIALIZATION (Self-Correcting)
-# ==========================================
-if 'mind' not in st.session_state:
-    st.session_state.mind = TitanBrain(buffer_size=st.session_state.config['buffer_size'], hidden_size=st.session_state.config['hidden_size'])
-    st.session_state.soul = AGICore() # Start with AGI
-    st.session_state.agent_pos = np.array([50.0, 50.0])
-    st.session_state.target_pos = np.array([80.0, 20.0])
-    st.session_state.step_count = 0
-    st.session_state.wins = 0
-    st.session_state.auto_mode = False
-    st.session_state.chat_history = []
-    st.session_state.loss_history = []
-    st.session_state.reward_history = []
-    st.session_state.is_hugging = False
-    
-    
-    # --- NEW: Add config dictionary for sidebar parameters ---
+
+# 1. Initialize Configuration FIRST (So the brain knows what to do)
+if 'config' not in st.session_state:
     st.session_state.config = {
         "sim_speed": 0.1, "move_speed": 8.0, "energy_decay": 0.1, "target_update_freq": 50,
         "shaping_multiplier": 2.0, "hug_reward": 100.0, "hug_distance": 8.0,
@@ -499,28 +481,36 @@ if 'mind' not in st.session_state:
         "hidden_size": 64, "buffer_size": 10000,
         "grid_h": 15, "grid_w": 40, "graph_points": 500
     }
-    # Apply initial config to the mind
-    st.session_state.mind = AdvancedMind(buffer_size=st.session_state.config['buffer_size'], hidden_size=st.session_state.config['hidden_size'])
 
-# --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
-# This checks if the 'soul' is missing the 'current_mood' attribute.
-# If it is missing, we force a complete brain transplant to the new AGICore.
-# --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
-# Checks if the 'soul' object is outdated or missing the new 'update' function
+# 2. Initialize Mind & Soul (Now safe to use config)
+if 'mind' not in st.session_state:
+    st.session_state.mind = TitanBrain(
+        buffer_size=st.session_state.config['buffer_size'], 
+        hidden_size=st.session_state.config['hidden_size']
+    )
+    st.session_state.soul = AGICore() 
+    st.session_state.agent_pos = np.array([50.0, 50.0])
+    st.session_state.target_pos = np.array([80.0, 20.0])
+    st.session_state.step_count = 0
+    st.session_state.wins = 0
+    st.session_state.auto_mode = False
+    st.session_state.chat_history = []
+    st.session_state.loss_history = []
+    st.session_state.reward_history = []
+    st.session_state.is_hugging = False
+
+# 3. Legacy Check (Hotfix for old versions)
 if hasattr(st.session_state, 'soul'):
-    # We check if the existing object has the 'update' method. If not, it's an old version!
     if not hasattr(st.session_state.soul, 'update') or not hasattr(st.session_state.soul, 'current_mood'):
         st.session_state.soul = AGICore() # FORCE REBOOT
         st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
         time.sleep(0.5)
         st.rerun()
 
-# This check ensures the history lists exist even if the session state is from an older version.
+# 4. Ensure History Lists Exist
 if 'loss_history' not in st.session_state:
     st.session_state.loss_history = []
     st.session_state.reward_history = []
-if 'config' not in st.session_state: # Hotfix for adding config to old sessions
-    st.session_state.config = {} # Will be populated by sidebar code
     
 
 def plan_path_to_target(start_pos, target_pos, grid_size=(25, 50)):
