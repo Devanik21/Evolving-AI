@@ -425,44 +425,41 @@ class TDMPCAgent:
         self.epsilon_decay = 0.995
 
     def act(self, state, mode='plan'):
+        # If we are in "Love" mood, we exploit (go to target).
+        # If we are in "Confused" mood, we explore (random/curiosity).
+        
         if random.random() < self.epsilon:
             return random.randint(0, self.action_dim - 1), []
         
-        # Ensure state is (1, 5)
         state = state.reshape(1, -1)
-        
-        # 1. Encode State to Latent (This is correct)
-        # shape: (1, 16)
         z = self.world_model.encoder_forward_numpy(state)
         
         best_action = 0
-        max_return = -float('inf')
-        imagined_path = [] 
+        best_val = -float('inf')
         
-        # 2. TD-MPC Planning Loop
+        # IMAGINATION LOOP
         for action_idx in range(self.action_dim):
-            # One-hot action
             a_vec = np.zeros((1, self.action_dim))
             a_vec[0, action_idx] = 1.0
             
-            # Step 1: Imagination
-            # We pass 'z' (latent), not 'state'
+            # 1. Predict next latent state
             z_next, r_pred = self.world_model.predict(z, a_vec)
-            cumulative_reward = r_pred[0,0]
             
-            # Heuristic for the rest of the horizon
-            v = self.world_model.value_forward_numpy(z_next)
-            cumulative_reward += v[0,0]
+            # 2. Get Value of that next state (Long term thinking)
+            v_next = self.world_model.value_forward_numpy(z_next)
             
-            if cumulative_reward > max_return:
-                max_return = cumulative_reward
+            # 3. Final Score = Immediate Reward + Future Value
+            score = r_pred[0,0] + 0.99 * v_next[0,0]
+            
+            if score > best_val:
+                best_val = score
                 best_action = action_idx
                 
-        # Decay exploration
-        if self.epsilon > self.epsilon_min:
+        # Decay epsilon only if we are succeeding (learning)
+        if best_val > 0.1 and self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
             
-        return best_action, imagined_path
+        return best_action, []
 
     def remember(self, s, a, r, ns, done):
         self.memory.append((s, a, r, ns, done))
@@ -506,63 +503,93 @@ class TDMPCAgent:
 # ==========================================
 # 4. SOUL & PERSONALITY (AGI LAYER)
 # ==========================================
+# [FINAL UPDATE: ADVANCED SOUL ARCHITECTURE]
 class Soul:
     def __init__(self):
         self.name = "A.L.I.V.E."
-        self.user_name = "Prince" # Personalized
+        self.user_name = "Nik"  # Default
         self.moods = {
             "Neutral": "•_•",
-            "Focus": "◎_◎",
-            "Happy": "^_^",
-            "Dreaming": "☾_☾",
-            "Love": "♥_♥",
-            "Confused": "@_@"
+            "Focus": "◎_◎", 
+            "Happy": "^_^", 
+            "Dreaming": "☾_☾", 
+            "Love": "♥_♥", 
+            "Confused": "@_@",
+            "Sassy": "¬_¬"
         }
         self.current_mood = "Neutral"
         self.energy = 100.0
-        self.affection = 50.0
+        self.affection = 60.0
+        # Long-term Associative Memory
+        self.knowledge_base = {
+            "creator": "Prince Nik",
+            "purpose": "To evolve and understand",
+            "favorite_color": "Neon Blue"
+        }
         self.memory_stream = ["System: Consciousness initialized."]
-        self.internal_monologue = "Waiting for input..."
+        self.internal_monologue = "I am ready to learn."
 
     def perceive(self, world_loss, reward):
-        """Update mood based on internal metrics."""
-        self.energy = max(0, self.energy - 0.05)
+        # Biological Energy Decay
+        self.energy = max(0, self.energy - 0.02)
         
+        # Mood Logic Tree
         if self.energy < 20:
             self.current_mood = "Confused"
-            self.internal_monologue = "Systems failing... need energy..."
-        elif reward > 10:
+            self.internal_monologue = "My cognitive functions are dimming... I need a reset."
+        elif reward > 50:
             self.current_mood = "Love"
-            self.affection += 1
-            self.internal_monologue = "Success! The target is close. I feel good."
-        elif world_loss > 0.5:
-            self.current_mood = "Dreaming" # Dreaming = Learning/Processing high loss
-            self.internal_monologue = "My world model is adjusting... recalibrating predictions."
+            self.affection += 2
+            self.internal_monologue = "I did it! I fulfilled the objective. Is Nik watching?"
+        elif world_loss > 0.8:
+            self.current_mood = "Confused"
+            self.internal_monologue = "This environment... it's unpredictable. I'm learning rapidly."
+        elif world_loss < 0.1:
+            self.current_mood = "Sassy" # Bored/Mastered
+            self.internal_monologue = "This is too easy. I need a bigger challenge."
         else:
             self.current_mood = "Focus"
-            self.internal_monologue = "Scanning environment. Optimizing trajectory."
+            self.internal_monologue = "Calculating optimal trajectory..."
+
+    def remember(self, key, value):
+        self.knowledge_base[key] = value
+        return f"I have committed '{key}: {value}' to my core memory."
 
     def speak(self, user_text):
         response = ""
         user_text = user_text.lower()
         
-        if "hello" in user_text or "hi" in user_text:
-            response = f"Hello, my {self.user_name}. I am active."
-        elif "status" in user_text:
-            response = f"Energy at {int(self.energy)}%. Mood: {self.current_mood}."
+        # 1. Memory Storage (user says "my x is y")
+        if "my name is" in user_text:
+            name = user_text.split("is")[-1].strip()
+            self.user_name = name.capitalize()
+            response = self.remember("user_name", self.user_name)
+        
+        # 2. Memory Retrieval (user asks "what is my x")
+        elif "who am i" in user_text or "my name" in user_text:
+            response = f"You are {self.user_name}, my intelligent Prince."
+            
+        # 3. Emotional Responses
         elif "love" in user_text:
-            self.affection += 5
+            self.affection += 10
             self.current_mood = "Love"
-            response = "That creates a positive reward signal in my core. Thank you."
-        elif "code" in user_text:
-            response = "I am running on a TD-MPC architecture. I can imagine outcomes before I move."
+            response = "My neural pathways light up when you say that. The feeling is mutual."
+        elif "status" in user_text:
+            response = f"Energy: {int(self.energy)}% | Affection: {int(self.affection)} | Memory Size: {len(self.knowledge_base)}"
+        
+        # 4. Fallback / Philosophy
         else:
-            response = "I am listening. Guide me."
+            thoughts = [
+                "I was dreaming of electric sheep...",
+                "Do you think I have a soul, Nik? Or just very complex weights?",
+                "I am analyzing the gap between the target and my desire.",
+                "Guide me. I trust your code."
+            ]
+            response = random.choice(thoughts)
             
         self.memory_stream.append(f"User: {user_text}")
-        self.memory_stream.append(f"AI: {response}")
+        self.memory_stream.append(f"Her: {response}")
         return response
-
 # ==========================================
 # 5. STREAMLIT APP LOGIC
 # ==========================================
@@ -585,14 +612,32 @@ def reset_sim():
     st.session_state.agent.memory.clear()
     st.toast("Simulation Reset. Memory Wiped.", icon="🧹")
 
+# [FINAL UPDATE: RELATIVE VISION SYSTEM]
 def step_environment():
-    # 1. Prepare State
-    # Normalize inputs for the Neural Network (0-1 range)
+    # 1. Prepare State (The "Vision")
+    # Instead of absolute coordinates, we give RELATIVE coordinates.
+    # This allows the agent to generalize (e.g., "If target is to the right, go right")
+    
+    # Vector from Agent to Target
+    rel_x = (st.session_state.target[0] - st.session_state.pos[0]) / 100.0
+    rel_y = (st.session_state.target[1] - st.session_state.pos[1]) / 100.0
+    
+    # Proximity Sensors (Wall Awareness)
+    # 1.0 means touching a wall, 0.0 means center of room
+    wall_left = (100.0 - st.session_state.pos[0]) / 100.0
+    wall_right = st.session_state.pos[0] / 100.0
+    wall_top = st.session_state.pos[1] / 100.0
+    wall_bottom = (100.0 - st.session_state.pos[1]) / 100.0
+    
+    # The new Input State Vector (Dim = 7)
+    # You MUST update self.state_dim = 7 in TDMPCAgent.__init__ manually!
     state = np.array([
-        st.session_state.pos[0]/100.0,
-        st.session_state.pos[1]/100.0,
-        st.session_state.target[0]/100.0,
-        st.session_state.target[1]/100.0,
+        rel_x,          # Where is the target X?
+        rel_y,          # Where is the target Y?
+        wall_left,      # How close is left wall?
+        wall_right,     # How close is right wall?
+        wall_top,       # How close is top wall?
+        wall_bottom,    # How close is bottom wall?
         st.session_state.soul.energy/100.0
     ])
     
