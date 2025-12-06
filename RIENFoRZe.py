@@ -418,7 +418,8 @@ class WorldModel:
 
 class TDMPCAgent:
     def __init__(self):
-        self.state_dim = 7 # AgentX, AgentY, TargetX, TargetY, Energy
+        # CHANGED: Updated from 5 to 7 to match your new Relative Vision System
+        self.state_dim = 7  # AgentX, AgentY, TargetX, TargetY, Energy, + Wall Sensors
         self.action_dim = 4 # Up, Down, Left, Right
         self.latent_dim = 16
         self.horizon = 5 # Planning Horizon (H)
@@ -426,7 +427,7 @@ class TDMPCAgent:
         self.world_model = WorldModel(self.state_dim, self.action_dim, self.latent_dim)
         self.memory = deque(maxlen=2000)
         self.batch_size = 32
-        self.epsilon = 0.5 # Exploration
+        self.epsilon = 0.5 
         self.epsilon_min = 0.05
         self.epsilon_decay = 0.995
 
@@ -631,32 +632,22 @@ def reset_sim():
 
 # [FINAL UPDATE: RELATIVE VISION SYSTEM]
 def step_environment():
-    # 1. Prepare State (The "Vision")
-    # Instead of absolute coordinates, we give RELATIVE coordinates.
-    # This allows the agent to generalize (e.g., "If target is to the right, go right")
-    
-    # Vector from Agent to Target
-    rel_x = (st.session_state.target[0] - st.session_state.pos[0]) / 100.0
-    rel_y = (st.session_state.target[1] - st.session_state.pos[1]) / 100.0
-    
-    # Proximity Sensors (Wall Awareness)
-    # 1.0 means touching a wall, 0.0 means center of room
-    wall_left = (100.0 - st.session_state.pos[0]) / 100.0
-    wall_right = st.session_state.pos[0] / 100.0
-    wall_top = st.session_state.pos[1] / 100.0
-    wall_bottom = (100.0 - st.session_state.pos[1]) / 100.0
-    
-    # The new Input State Vector (Dim = 7)
-    # You MUST update self.state_dim = 7 in TDMPCAgent.__init__ manually!
-    state = np.array([
-        rel_x,          # Where is the target X?
-        rel_y,          # Where is the target Y?
-        wall_left,      # How close is left wall?
-        wall_right,     # How close is right wall?
-        wall_top,       # How close is top wall?
-        wall_bottom,    # How close is bottom wall?
-        st.session_state.soul.energy/100.0
-    ])
+    # --- HELPER: Internal function to generate state vector ---
+    def get_state_vector(pos_arr, target_arr, energy_val):
+        # Relative Target Vector
+        r_x = (target_arr[0] - pos_arr[0]) / 100.0
+        r_y = (target_arr[1] - pos_arr[1]) / 100.0
+        
+        # Wall Sensors
+        w_l = (100.0 - pos_arr[0]) / 100.0
+        w_r = pos_arr[0] / 100.0
+        w_t = pos_arr[1] / 100.0
+        w_b = (100.0 - pos_arr[1]) / 100.0
+        
+        return np.array([r_x, r_y, w_l, w_r, w_t, w_b, energy_val/100.0])
+
+    # 1. Prepare Current State
+    state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
     
     # 2. Agent Actions (Planning)
     action_idx, _ = st.session_state.agent.act(state)
@@ -679,7 +670,7 @@ def step_environment():
     
     curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
-    # 4. Rewards (Dense reward for faster training)
+    # 4. Rewards
     reward = (prev_dist - curr_dist) * 2.0 
     done = False
     
@@ -694,13 +685,8 @@ def step_environment():
         reward -= 0.1 # Time penalty
     
     # 5. Training Step (TD-MPC Update)
-    next_state = np.array([
-        st.session_state.pos[0]/100.0,
-        st.session_state.pos[1]/100.0,
-        st.session_state.target[0]/100.0,
-        st.session_state.target[1]/100.0,
-        st.session_state.soul.energy/100.0
-    ])
+    # FIX: We now generate next_state using the exact same logic as state
+    next_state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
     
     st.session_state.agent.remember(state, action_idx, reward, next_state, done)
     loss = st.session_state.agent.replay()
