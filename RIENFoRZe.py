@@ -730,6 +730,11 @@ with row1_2:
 # Performance Graph
 st.markdown("---")
 st.markdown("### 📈 Performance Metrics")
+
+# Ensure history lists exist before trying to access them
+if 'loss_history' not in st.session_state: st.session_state.loss_history = []
+if 'reward_history' not in st.session_state: st.session_state.reward_history = []
+
 if len(st.session_state.loss_history) > 1:
     # Create a DataFrame for charting
     chart_data = pd.DataFrame({
