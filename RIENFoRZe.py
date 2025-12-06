@@ -568,78 +568,91 @@ def reset_sim():
     st.toast("Simulation Reset. Memory Wiped.", icon="🧹")
 
 def step_environment():
+    # Helper to calculate state
     def get_state_vector(pos_arr, target_arr, energy_val):
         r_x = (target_arr[0] - pos_arr[0]) / 100.0
         r_y = (target_arr[1] - pos_arr[1]) / 100.0
-        
-        w_l = (100.0 - pos_arr[0]) / 100.0
-        w_r = pos_arr[0] / 100.0
+        w_l = pos_arr[0] / 100.0
+        w_r = (100.0 - pos_arr[0]) / 100.0
         w_t = pos_arr[1] / 100.0
         w_b = (100.0 - pos_arr[1]) / 100.0
-        
-        abs_x = pos_arr[0] / 100.0
-        abs_y = pos_arr[1] / 100.0
-        
-        return np.array([r_x, r_y, w_l, w_r, w_t, w_b, abs_x, abs_y, energy_val/100.0])
+        return np.array([r_x, r_y, w_l, w_r, w_t, w_b, pos_arr[0]/100.0, pos_arr[1]/100.0, energy_val/100.0])
 
     state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
+    
+    # Save previous position to check for "laziness"
+    prev_pos = st.session_state.pos.copy()
     
     action_idx, _ = st.session_state.agent.act(state)
     
     move_vec = np.array([0.0, 0.0])
     
     dist_to_target = np.linalg.norm(st.session_state.pos - st.session_state.target)
-    speed = 8.0 if dist_to_target > 20.0 else 4.0
+    speed = 6.0 # Constant speed is easier to learn initially
     
-    if action_idx == 0: move_vec[1] = -speed
-    elif action_idx == 1: move_vec[1] = speed
-    elif action_idx == 2: move_vec[0] = -speed
-    elif action_idx == 3: move_vec[0] = speed
+    # PRINCE NIK: Standard Grid Movement
+    if action_idx == 0: move_vec[1] = -speed # UP
+    elif action_idx == 1: move_vec[1] = speed  # DOWN
+    elif action_idx == 2: move_vec[0] = -speed # LEFT
+    elif action_idx == 3: move_vec[0] = speed  # RIGHT
     
     prev_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
+    # Apply movement
     st.session_state.pos += move_vec
-    st.session_state.pos = np.clip(st.session_state.pos, 0, 100)
     
+    # --- COLLISION LOGIC ---
+    hit_wall = False
+    if st.session_state.pos[0] < 2: 
+        st.session_state.pos[0] = 2
+        hit_wall = True
+    if st.session_state.pos[0] > 98: 
+        st.session_state.pos[0] = 98
+        hit_wall = True
+    if st.session_state.pos[1] < 2: 
+        st.session_state.pos[1] = 2
+        hit_wall = True
+    if st.session_state.pos[1] > 98: 
+        st.session_state.pos[1] = 98
+        hit_wall = True
+        
     curr_dist = np.linalg.norm(st.session_state.pos - st.session_state.target)
     
-    # NUCLEAR UPGRADE: 50x stronger rewards
-    movement_reward = (prev_dist - curr_dist) * 50.0
-    proximity_bonus = 100.0 / (curr_dist + 0.1)
+    # --- REWARD SYSTEM v7.1 ---
+    # 1. Distance Reward (Normalized)
+    reward = (prev_dist - curr_dist) * 10.0 
     
-    reward = movement_reward + proximity_bonus
-    
-    # SEVERE wall punishment + emergency correction
-    if (st.session_state.pos[0] <= 5.0 or st.session_state.pos[0] >= 95.0 or 
-        st.session_state.pos[1] <= 5.0 or st.session_state.pos[1] >= 95.0):
-        reward -= 100.0
-        if st.session_state.pos[0] <= 5.0: st.session_state.pos[0] = 5.0
-        if st.session_state.pos[0] >= 95.0: st.session_state.pos[0] = 95.0
-        if st.session_state.pos[1] <= 5.0: st.session_state.pos[1] = 5.0
-        if st.session_state.pos[1] >= 95.0: st.session_state.pos[1] = 95.0
+    # 2. Wall Punishment
+    if hit_wall:
+        reward -= 50.0 
+        
+    # 3. Laziness Punishment (If it didn't move effectively)
+    if np.linalg.norm(st.session_state.pos - prev_pos) < 1.0:
+        reward -= 10.0
     
     done = False
     
+    # Capture Target
     if curr_dist < 6.0:
-        reward = 200.0
+        reward += 100.0
         done = True
         st.session_state.wins += 1
         st.session_state.target = np.array([random.uniform(10,90), random.uniform(10,90)])
         st.session_state.soul.energy = 100
-        st.toast("🎯 TARGET ACQUIRED! Intelligence Level: GENIUS", icon="⚡")
+        st.toast("🎯 TARGET ACQUIRED!", icon="⚡")
     else:
-        reward -= 0.5
+        # Small living cost to encourage speed
+        reward -= 0.1
     
     next_state = get_state_vector(st.session_state.pos, st.session_state.target, st.session_state.soul.energy)
     st.session_state.agent.remember(state, action_idx, reward, next_state, done)
     
-    # HYPER-LEARNING: 5 replays per step
+    # Training Loop
     total_loss = 0
     for _ in range(5):
         total_loss += st.session_state.agent.replay()
     
     avg_loss = total_loss / 5.0
-    
     st.session_state.soul.perceive(avg_loss, reward)
     st.session_state.steps += 1
     if avg_loss > 0:
