@@ -473,6 +473,17 @@ class TDMPCAgent:
     def replay(self):
         if len(self.memory) < self.batch_size: return 0
         
+        # [SELF-HEALING FIX] 
+        # Check if the memory is corrupted (Old 5-dim data in a 7-dim brain)
+        sample_experience = self.memory[0]
+        state_in_memory = sample_experience[0]
+        
+        # If memory state size doesn't match current agent state size
+        if state_in_memory.size != self.state_dim:
+            st.toast("⚠️ Corrupted Memory Detected. Purging...", icon="🗑️")
+            self.memory.clear()
+            return 0
+        
         minibatch = random.sample(self.memory, self.batch_size)
         
         s_batch = np.array([x[0] for x in minibatch])
