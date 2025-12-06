@@ -133,7 +133,7 @@ class AdvancedMind:
         self.epsilon = 1.0   
         self.epsilon_min = 0.05
         self.epsilon_decay = 0.99
-        self.learning_rate = 0.0025 # Adjusted for more stable learning
+        self.learning_rate = 0.005 # Adjusted for more stable learning
         self.beta = 0.4 # Importance sampling exponent
         self.beta_increment = 0.001
         
@@ -191,40 +191,67 @@ class AdvancedMind:
         
         # Sample from the prioritized buffer
         batch, indices, weights = self.memory.sample(batch_size, self.beta)
-        self.beta = min(1.0, self.beta + self.beta_increment) # Anneal beta
+        self.beta = min(1.0, self.beta + self.beta_increment) 
         
         loss_val = 0
         new_priorities = []
+        
+        # Accumulate gradients (Simulating a batch update)
+        # We process item by item for clarity in this numpy implementation
         for i, (state, action, reward, next_state, done) in enumerate(batch):
+            state = state.reshape(1, -1)
+            next_state = next_state.reshape(1, -1)
+            
+            # 1. Calculate Target
             target = reward
             if not done:
-                # Double DQN Logic: Select action with Online, Evaluate with Target
                 next_q_online, _ = self.forward(next_state, self.online_net)
                 best_next_action = np.argmax(next_q_online[0])
-                
                 next_q_target, _ = self.forward(next_state, self.target_net)
                 target = reward + self.gamma * next_q_target[0][best_next_action]
             
-            # Forward pass
+            # 2. Forward Pass
             current_q, a1 = self.forward(state, self.online_net)
             
-            # Error Calculation
-            target_f = current_q.copy()
-            td_error = target - target_f[0][action]
-            target_f[0][action] = target
+            # 3. Calculate Error (TD Error)
+            # We only care about the error for the action we actually took
+            td_error = target - current_q[0][action]
             
-            # Update priority for this experience
+            # Store priority
             new_priorities.append(abs(td_error))
             
-            # Simple Backprop (Stochastic Gradient Descent)
-            # We apply the importance-sampling weight here to correct for the biased sampling
+            # 4. BACKPROPAGATION (The Fix)
+            # Apply importance sampling weight
             weighted_error = td_error * weights[i]
             loss_val += weighted_error ** 2
             
-            # Update weights (simplified for demo speed)
-            # The gradient is now scaled by the importance weight
-            grad = (target_f - current_q) * weights[i]
-            self.online_net['W1'] += self.learning_rate * np.dot(state.reshape(1,-1).T, np.dot(grad, self.online_net['W_adv'].T) * (a1>0)) 
+            # -- Gradient for Output Layers --
+            # dQ/dVal = 1, dQ/dAdv = 1 (at action index)
+            # We treat weighted_error as the upstream gradient
+            
+            grad_val = weighted_error * a1.T # (64, 1)
+            
+            grad_adv = np.zeros_like(self.online_net['W_adv'])
+            grad_adv[:, action] = weighted_error * a1[0] # Only update the specific action taken
+            
+            # -- Gradient for Hidden Layer (W1) --
+            # Backprop error through Val stream and Adv stream
+            # Error at Hidden Layer = (Error * W_val) + (Error * W_adv)
+            error_from_val = np.dot(self.online_net['W_val'], weighted_error) 
+            error_from_adv = np.dot(self.online_net['W_adv'][:, action].reshape(-1, 1), weighted_error)
+            
+            total_error_at_hidden = (error_from_val + error_from_adv).T # (1, 64)
+            
+            # Apply ReLU derivative (if a1 <= 0, grad is 0)
+            total_error_at_hidden[a1 <= 0] = 0
+            
+            grad_w1 = np.dot(state.T, total_error_at_hidden)
+            
+            # -- Update Weights --
+            # Using a simplified SGD update rule
+            self.online_net['W_val'] += self.learning_rate * grad_val
+            self.online_net['W_adv'] += self.learning_rate * grad_adv
+            self.online_net['W1']    += self.learning_rate * grad_w1
 
         self.memory.update_priorities(indices, new_priorities)
         
@@ -338,12 +365,15 @@ def process_step():
     action = st.session_state.mind.act(state)
     
     # 3. Physics Update (Continuous Movement simulation)
-    move_speed = 6.0 # Faster for advanced feel
+    # 3. Physics Update (Continuous Movement simulation)
+    move_speed = 8.0 # Boost speed slightly to make training faster
     old_pos = st.session_state.agent_pos.copy()
     
-    # Smooth movement (Interpolation)
-    if action == 0: st.session_state.agent_pos[1] += move_speed # Up
-    elif action == 1: st.session_state.agent_pos[1] -= move_speed # Down
+    # Grid Logic: (0,0) is Top-Left. 
+    # Action 0 (Up) -> Decrease Y
+    # Action 1 (Down) -> Increase Y
+    if action == 0: st.session_state.agent_pos[1] -= move_speed # Up (Fixed)
+    elif action == 1: st.session_state.agent_pos[1] += move_speed # Down (Fixed)
     elif action == 2: st.session_state.agent_pos[0] -= move_speed # Left
     elif action == 3: st.session_state.agent_pos[0] += move_speed # Right
     
