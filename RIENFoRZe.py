@@ -903,27 +903,47 @@ with st.sidebar:
 
 
     with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=True):
-        # We use a key to make the state persistent and unique
-        enable_maze = st.checkbox("Initialize Maze Mode", value=True, key="maze_toggle")
+        # We use a specific key to track the UI state
+        # Default is False so it doesn't crash on first load
+        enable_maze = st.checkbox("Initialize Maze Mode", value=False, key="maze_toggle")
         
         if enable_maze:
-            # FIX: Check if it is None OR if it is missing
+            # === CONDITION 1: Switch is ON, but no Maze exists ===
             if st.session_state.get('maze_grid') is None:
                 h = st.session_state.config.get('grid_h', 15)
                 w = st.session_state.config.get('grid_w', 40)
-                st.session_state.maze_grid = generate_maze(h, w)
-                st.toast("🧱 Labyrinth Constructed", icon="🏗️")
                 
-                # Reset positions to safe spots
+                # Generate the maze
+                st.session_state.maze_grid = generate_maze(h, w)
+                
+                # CRITICAL: Move entities to safe corners immediately
                 st.session_state.agent_pos = np.array([5.0, 5.0]) 
                 st.session_state.target_pos = np.array([95.0, 95.0])
-                st.rerun() # Force refresh to show the maze immediately
-        else:
-            # If switch is OFF, ensure memory is cleared
-            if st.session_state.get('maze_grid') is not None:
-                st.session_state.maze_grid = None
-                st.rerun() # Force refresh to clear the maze immediately
+                
+                st.toast("🧱 Labyrinth Constructed", icon="🏗️")
+                st.rerun() # Force main screen to update instantly
+            
+            # === CONDITION 2: Maze exists, allow regeneration ===
+            if st.button("🎲 Generate New Map"):
+                h = st.session_state.config.get('grid_h', 15)
+                w = st.session_state.config.get('grid_w', 40)
+                st.session_state.maze_grid = generate_maze(h, w)
+                
+                # Reset positions again for safety
+                st.session_state.agent_pos = np.array([5.0, 5.0]) 
+                st.session_state.target_pos = np.array([95.0, 95.0])
+                
+                st.toast("✨ New Maze Generated", icon="🌀")
+                st.rerun()
 
+        else:
+            # === CONDITION 3: Switch is OFF, but Maze still exists in memory ===
+            if st.session_state.get('maze_grid') is not None:
+                # Clear the memory
+                st.session_state.maze_grid = None
+                st.toast("🔓 Open Space Restored", icon="🌍")
+                st.rerun() # Force main screen to remove walls instantly
+                
     # --- Update mind's parameters if they change ---
     st.session_state.mind.learning_rate = lr
     st.session_state.mind.epsilon_decay = ed
