@@ -1121,12 +1121,29 @@ with st.sidebar:
 
 # 1. VIEW CONTROLLER
 # We use a fresh key 'field_visibility_v3'.
-# value=True -> Starts ON by default.
-# key="..." -> Tells Streamlit to REMEMBER if you turn it OFF.
-show_field = st.toggle("🌍 Show Containment Field", value=True, key="field_visibility_v3")
+# ==========================================
+# MAIN INTERACTION AREA (Dynamic Layout)
+# ==========================================
+
+# 1. VIEW CONTROLLER (Robust Persistence)
+# Check if the state exists, if not, create it.
+if 'show_containment_field' not in st.session_state:
+    st.session_state.show_containment_field = True
+
+def toggle_field_state():
+    # Flip the state when clicked
+    st.session_state.show_containment_field = not st.session_state.show_containment_field
+
+# The Toggle Widget
+st.toggle(
+    "🌍 Show Containment Field", 
+    value=st.session_state.show_containment_field, 
+    on_change=toggle_field_state,
+    key="persistent_view_toggle"
+)
 
 # 2. DYNAMIC COLUMN GENERATION
-if show_field:
+if st.session_state.show_containment_field:
     # Standard Mode: Map (Left, 66%) | Brain (Right, 33%)
     row1_1, row1_2 = st.columns([2, 1])
 else:
