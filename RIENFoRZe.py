@@ -1109,8 +1109,17 @@ with st.sidebar:
 # ==========================================
 
 # 1. VIEW CONTROLLER
-# Toggle to hide the map and focus on the Brain/Rubik's Cube
-show_field = st.toggle("🌍 Show Containment Field", value=True, key="main_map_toggle")
+# ==========================================
+# MAIN INTERACTION AREA (Dynamic Layout)
+# ==========================================
+
+# 1. VIEW CONTROLLER (Bulletproof Persistence)
+# Check if the memory slot exists. If not, create it and set to True (Show by default)
+if "map_active" not in st.session_state:
+    st.session_state.map_active = True
+
+# We remove the 'value=' parameter and rely 100% on the key matching the state above
+show_field = st.toggle("🌍 Show Containment Field", key="map_active")
 
 # 2. DYNAMIC COLUMN GENERATION
 if show_field:
@@ -1118,9 +1127,8 @@ if show_field:
     row1_1, row1_2 = st.columns([2, 1])
 else:
     # Focus Mode: Brain takes Full Width
-    # We set row1_1 to None so we can skip rendering the map
     row1_1 = None 
-    row1_2 = st.container() 
+    row1_2 = st.container()
 
 # -----------------------------------
 # LEFT COLUMN: THE WORLD (Conditional)
