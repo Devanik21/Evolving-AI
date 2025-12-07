@@ -833,9 +833,12 @@ class PersonalityCore:
 # ==========================================
 # 4. APP STATE INITIALIZATION (Self-Correcting)
 # ==========================================
+# ==========================================
+# 4. APP STATE INITIALIZATION (HOTFIX)
+# ==========================================
 if 'mind' not in st.session_state:
     st.session_state.mind = AdvancedMind()
-    st.session_state.soul = AGICore() # Start with AGI
+    st.session_state.soul = AGICore()  # ← CRITICAL: This must be AGICore, not RubiksMind!
     st.session_state.agent_pos = np.array([50.0, 50.0])
     st.session_state.target_pos = np.array([80.0, 20.0])
     st.session_state.step_count = 0
@@ -846,7 +849,7 @@ if 'mind' not in st.session_state:
     st.session_state.reward_history = []
     st.session_state.is_hugging = False
     
-    # --- NEW: Add config dictionary for sidebar parameters ---
+    # Config dictionary
     st.session_state.config = {
         "sim_speed": 0.1, "move_speed": 8.0, "energy_decay": 0.1, "target_update_freq": 50,
         "shaping_multiplier": 2.0, "hug_reward": 100.0, "hug_distance": 8.0,
@@ -856,8 +859,33 @@ if 'mind' not in st.session_state:
         "hidden_size": 64, "buffer_size": 10000,
         "grid_h": 15, "grid_w": 40, "graph_points": 500
     }
-    # Apply initial config to the mind
-    st.session_state.mind = AdvancedMind(buffer_size=st.session_state.config['buffer_size'], hidden_size=st.session_state.config['hidden_size'])
+    st.session_state.mind = AdvancedMind(
+        buffer_size=st.session_state.config['buffer_size'], 
+        hidden_size=st.session_state.config['hidden_size']
+    )
+
+# EMERGENCY TYPE CHECK - Force correct soul type
+if not isinstance(st.session_state.soul, AGICore):
+    st.session_state.soul = AGICore()
+    st.toast("🔧 Soul Core Reset to AGICore", icon="⚙️")
+
+# Ensure soul has the update method
+if hasattr(st.session_state, 'soul'):
+    if not hasattr(st.session_state.soul, 'update') or not hasattr(st.session_state.soul, 'current_mood'):
+        st.session_state.soul = AGICore()
+        st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
+
+# Ensure history lists exist
+if 'loss_history' not in st.session_state:
+    st.session_state.loss_history = []
+    st.session_state.reward_history = []
+
+if 'config' not in st.session_state:
+    st.session_state.config = {}
+
+# Initialize RubiksMind separately (NOT as soul!)
+if 'rubiks_mind' not in st.session_state:
+    st.session_state.rubiks_mind = RubiksMind()
 
 # --- FINAL HOTFIX FOR PERSISTENT MEMORY ---
 # This checks if the 'soul' is missing the 'current_mood' attribute.
