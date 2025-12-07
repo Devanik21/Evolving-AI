@@ -903,23 +903,26 @@ with st.sidebar:
 
 
     with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=True):
-        # I added value=True so it starts ON by default
-        enable_maze = st.checkbox("Initialize Maze Mode", value=True)
+        # We use a key to make the state persistent and unique
+        enable_maze = st.checkbox("Initialize Maze Mode", value=True, key="maze_toggle")
         
         if enable_maze:
-            # LAZY LOADING: Only generate if it doesn't exist yet
-            if 'maze_grid' not in st.session_state:
+            # FIX: Check if it is None OR if it is missing
+            if st.session_state.get('maze_grid') is None:
                 h = st.session_state.config.get('grid_h', 15)
                 w = st.session_state.config.get('grid_w', 40)
                 st.session_state.maze_grid = generate_maze(h, w)
                 st.toast("🧱 Labyrinth Constructed", icon="🏗️")
                 
                 # Reset positions to safe spots
-                st.session_state.agent_pos = np.array([5.0, 5.0]) # Top Left
-                st.session_state.target_pos = np.array([95.0, 95.0]) # Bottom Right
+                st.session_state.agent_pos = np.array([5.0, 5.0]) 
+                st.session_state.target_pos = np.array([95.0, 95.0])
+                st.rerun() # Force refresh to show the maze immediately
         else:
-            # Unload maze to free memory/state
-            st.session_state.maze_grid = None
+            # If switch is OFF, ensure memory is cleared
+            if st.session_state.get('maze_grid') is not None:
+                st.session_state.maze_grid = None
+                st.rerun() # Force refresh to clear the maze immediately
 
     # --- Update mind's parameters if they change ---
     st.session_state.mind.learning_rate = lr
