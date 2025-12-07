@@ -1021,6 +1021,7 @@ with st.sidebar:
                 st.rerun()
 
             # 2. SOLVE (The Test)
+            # 2. SOLVE (The Test)
             if c2.button("⚡ Agent Solve", type="primary"):
                 if 'current_scramble' not in st.session_state:
                     st.error("Please Scramble the cube first!")
@@ -1038,6 +1039,13 @@ with st.sidebar:
                         "mastery": mastery,
                         "scramble_len": len(st.session_state.current_scramble)
                     }
+
+                    # --- NEW CODE: TELL THE SOUL WE WON! ---
+                    st.session_state.soul.current_mood = "Excited"
+                    st.session_state.soul.thought_process = f"ANALYSIS: Cube Solved! Complexity {c_size}x{c_size} conquered in {time_val}s."
+                    st.session_state.soul.last_chat = f"Did you see that, Prince? I solved the {c_size}x{c_size} in {len(steps)} moves!"
+                    # ---------------------------------------
+
                     st.rerun()
 
             # 3. RESET BRAIN (The "Lobotomy")
