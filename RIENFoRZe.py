@@ -938,14 +938,11 @@ with row1_1:
     # THE "WORLD" (ASCII Visualization)
     # -----------------------------------
     st.markdown("### 🌍 Containment Field")
-    grid_height = st.session_state.config.get('grid_h', 15)
-    grid_width = st.session_state.config.get('grid_w', 40)
     
-    # Create an empty grid
-    # -----------------------------------
-    # THE "WORLD" (ASCII Visualization)
-    # -----------------------------------
-    st.markdown("### 🌍 Containment Field")
+    # --- GAME MODE TOGGLE (LAZY LOAD) ---
+    # The game logic only exists if this is checked
+    game_mode = st.toggle("🎮 Activate Hide & Seek Protocol", value=False)
+
     grid_height = st.session_state.config.get('grid_h', 15)
     grid_width = st.session_state.config.get('grid_w', 40)
     
@@ -965,51 +962,87 @@ with row1_1:
     target_y = int(st.session_state.target_pos[1] / 100 * (grid_height - 1))
     target_x = int(st.session_state.target_pos[0] / 100 * (grid_width - 1))
 
-    # Bounds Checking for Rendering (Prevent crash if resized)
+    # Bounds Checking
     agent_y = max(0, min(agent_y, grid_height-1))
     agent_x = max(0, min(agent_x, grid_width-1))
     target_y = max(0, min(target_y, grid_height-1))
     target_x = max(0, min(target_x, grid_width-1))
 
-    # Place Objects (Logic remains mostly the same)
+    # --- RENDERING ICONS ---
     if st.session_state.get('is_hugging', False):
         grid[agent_y][agent_x] = '🫂' 
     elif (agent_y, agent_x) == (target_y, target_x):
         grid[agent_y][agent_x] = '💥'
     else:
-        mood_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
-        
-        # In maze mode, ensure target isn't inside a wall
-        if current_maze is not None and grid[target_y][target_x] == '#':
-             grid[target_y][target_x] = '💎' # Force draw target over wall (or move target logic elsewhere)
+        # Dynamic Icons based on Mode
+        if game_mode:
+            ai_icon = "🤖" # The Hunter
+            user_icon = "🥷" # The Ninja (You)
         else:
-             grid[target_y][target_x] = '💎'
-             
-        grid[agent_y][agent_x] = mood_icon
+            ai_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
+            user_icon = "💎"
 
-    # Render
+        # Draw Target (User)
+        if current_maze is not None and grid[target_y][target_x] == '#':
+             grid[target_y][target_x] = user_icon 
+        else:
+             grid[target_y][target_x] = user_icon
+        
+        # Draw Agent (AI)
+        grid[agent_y][agent_x] = ai_icon
+
+    # Render Grid
     grid_str = "\n".join(" ".join(row) for row in grid)
     st.code(grid_str, language=None)
 
-
-    # If hugging, offer a button to continue
-    if st.session_state.get('is_hugging', False):
-        st.success("Target Acquired! Protocol: HUG initiated.")
-        if st.button("🥰 Release Hug & Continue"):
-            st.session_state.is_hugging = False
-            st.session_state.target_pos = np.random.randint(10, 90, size=2) # NOW we move the target
+    # --- GAME CONTROLS (Only visible if Game Mode is ON) ---
+    if game_mode:
+        st.markdown("### 🕹️ You are the Target (🥷)")
+        st.caption("Use the D-Pad to run away from the AI!")
+        
+        # D-PAD Layout
+        c1, c2, c3, c4 = st.columns([1,1,1,2])
+        
+        move_step = 5.0 # How fast you run
+        
+        with c2:
+            if st.button("⬆️", key="btn_up"):
+                st.session_state.target_pos[1] = max(0, st.session_state.target_pos[1] - move_step)
+                st.rerun()
+        
+        c_left, c_mid, c_right = st.columns([1,1,1])
+        with c1:
+            if st.button("⬅️", key="btn_left"):
+                st.session_state.target_pos[0] = max(0, st.session_state.target_pos[0] - move_step)
+                st.rerun()
+        with c3:
+            if st.button("➡️", key="btn_right"):
+                st.session_state.target_pos[0] = min(100, st.session_state.target_pos[0] + move_step)
+                st.rerun()
+        with c2:
+            if st.button("⬇️", key="btn_down"):
+                st.session_state.target_pos[1] = min(100, st.session_state.target_pos[1] + move_step)
+                st.rerun()
+                
+    else:
+        # Standard Sliders (Legacy Mode)
+        if st.session_state.get('is_hugging', False):
+            st.success("Target Acquired! Protocol: HUG initiated.")
+            if st.button("🥰 Release Hug & Continue"):
+                st.session_state.is_hugging = False
+                st.session_state.target_pos = np.random.randint(10, 90, size=2)
+                st.rerun()
+        
+        st.markdown("### 🧲 Focus Attention (Lure)")
+        cx, cy = st.columns(2)
+        tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx')
+        ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty')
+        
+        # Update target from user input
+        if tx != int(st.session_state.target_pos[0]) or ty != int(st.session_state.target_pos[1]):
+            st.session_state.target_pos = np.array([float(tx), float(ty)])
             st.rerun()
-    
-    # Manual Override (The "Lure")
-    st.markdown("### 🧲 Focus Attention (Lure)")
-    cx, cy = st.columns(2)
-    tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx')
-    ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty')
-    
-    # Update target from user input
-    if tx != int(st.session_state.target_pos[0]) or ty != int(st.session_state.target_pos[1]):
-        st.session_state.target_pos = np.array([float(tx), float(ty)])
-        st.rerun() # Immediate update
+
 
 with row1_2:
     # -----------------------------------
