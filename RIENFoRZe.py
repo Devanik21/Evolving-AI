@@ -1110,7 +1110,7 @@ with st.sidebar:
 
 # 1. VIEW CONTROLLER
 # Toggle to hide the map and focus on the Brain/Rubik's Cube
-show_field = st.toggle("🌍 Show Containment Field", value=True)
+show_field = st.toggle("🌍 Show Containment Field", value=True, key="main_map_toggle")
 
 # 2. DYNAMIC COLUMN GENERATION
 if show_field:
