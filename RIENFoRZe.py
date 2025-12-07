@@ -875,6 +875,20 @@ if hasattr(st.session_state, 'soul'):
         st.session_state.soul = AGICore()
         st.toast("🧠 Brain Upgrade Detected: Core Re-initialized!", icon="✨")
 
+
+
+
+
+# ==========================================
+# 4.5 RUBIKS MIND UPGRADE CHECK
+# ==========================================
+# Force upgrade RubiksMind to new version if it exists but is outdated
+if 'rubiks_mind' in st.session_state:
+    if not hasattr(st.session_state.rubiks_mind, 'training_stats'):
+        st.session_state.rubiks_mind = RubiksMind()  # Force upgrade to new Class
+        st.toast("🧩 Rubik's Core Upgraded to Advanced Solver!", icon="🆙")
+        
+
 # Ensure history lists exist
 if 'loss_history' not in st.session_state:
     st.session_state.loss_history = []
