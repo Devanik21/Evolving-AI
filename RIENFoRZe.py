@@ -1098,127 +1098,154 @@ with st.sidebar:
     st.session_state.mind.beta = c['per_beta']
     st.session_state.mind.beta_increment = c['per_beta_increment']
 
-# Main Interaction Area
-row1_1, row1_2 = st.columns([2, 1])
+# ==========================================
+# MAIN INTERACTION AREA (Dynamic Layout)
+# ==========================================
 
-with row1_1:
-    # -----------------------------------
-    # THE "WORLD" (ASCII Visualization)
-    # -----------------------------------
-    st.markdown("### 🌍 Containment Field")
-    
-    # --- GAME MODE TOGGLE ---
-    game_mode = st.toggle("🎮 Activate Hide & Seek Protocol", value=False, key="game_mode_toggle")
+# 1. VIEW CONTROLLER
+# Toggle to hide the map and focus on the Brain/Rubik's Cube
+# ==========================================
+# MAIN INTERACTION AREA (Dynamic Layout)
+# ==========================================
 
-    grid_height = st.session_state.config.get('grid_h', 15)
-    grid_width = st.session_state.config.get('grid_w', 40)
-    
-    # Check if Maze Mode is active
-    current_maze = st.session_state.get('maze_grid', None)
-    
-    if current_maze is not None:
-        grid = [['#' if cell == 1 else '.' for cell in row] for row in current_maze]
-    else:
-        grid = [['.' for _ in range(grid_width)] for _ in range(grid_height)]
-    
-    # Scale positions
-    agent_y = int(st.session_state.agent_pos[1] / 100 * (grid_height - 1))
-    agent_x = int(st.session_state.agent_pos[0] / 100 * (grid_width - 1))
-    target_y = int(st.session_state.target_pos[1] / 100 * (grid_height - 1))
-    target_x = int(st.session_state.target_pos[0] / 100 * (grid_width - 1))
+# 1. VIEW CONTROLLER
+# Toggle to hide the map and focus on the Brain/Rubik's Cube
+show_field = st.toggle("🌍 Show Containment Field", value=True)
 
-    # Bounds Checking
-    agent_y = max(0, min(agent_y, grid_height-1))
-    agent_x = max(0, min(agent_x, grid_width-1))
-    target_y = max(0, min(target_y, grid_height-1))
-    target_x = max(0, min(target_x, grid_width-1))
+# 2. DYNAMIC COLUMN GENERATION
+if show_field:
+    # Standard Mode: Map (Left, 66%) | Brain (Right, 33%)
+    row1_1, row1_2 = st.columns([2, 1])
+else:
+    # Focus Mode: Brain takes Full Width
+    # We set row1_1 to None so we can skip rendering the map
+    row1_1 = None 
+    row1_2 = st.container() 
 
-    # --- RENDERING ICONS ---
-    if st.session_state.get('is_hugging', False):
-        grid[agent_y][agent_x] = '🫂' 
-    elif (agent_y, agent_x) == (target_y, target_x):
-        grid[agent_y][agent_x] = '💥'
-    else:
-        if game_mode:
-            ai_icon = "🤖" 
-            user_icon = "🥷"
-        else:
-            ai_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
-            user_icon = "💎"
-
-        if current_maze is not None and grid[target_y][target_x] == '#':
-             grid[target_y][target_x] = user_icon 
-        else:
-             grid[target_y][target_x] = user_icon
+# -----------------------------------
+# LEFT COLUMN: THE WORLD (Conditional)
+# -----------------------------------
+# We only enter this block if row1_1 exists (Toggle is ON)
+if row1_1:
+    with row1_1:
+        # -----------------------------------
+        # THE "WORLD" (ASCII Visualization)
+        # -----------------------------------
+        st.markdown("### 🌍 Containment Field")
         
-        grid[agent_y][agent_x] = ai_icon
+        # --- GAME MODE TOGGLE ---
+        game_mode = st.toggle("🎮 Activate Hide & Seek Protocol", value=False, key="game_mode_toggle")
 
-    # Render Grid
-    grid_str = "\n".join(" ".join(row) for row in grid)
-    st.code(grid_str, language=None)
-
-    # -----------------------------------
-    # CONTROLS LOGIC (FIXED)
-    # -----------------------------------
-    
-    # PRIORITY 1: RELEASE HUG (Global Override)
-    # This must be outside the if/else for game mode so you can always escape!
-    if st.session_state.get('is_hugging', False):
-        st.success("Target Caught! Game Over.")
-        if st.button("🔄 Play Again (Release Hug)", type="primary"):
-            st.session_state.is_hugging = False
-            # Teleport user to a random safe spot
-            st.session_state.target_pos = np.random.randint(10, 90, size=2)
-            st.rerun()
-
-    # PRIORITY 2: MOVEMENT CONTROLS (Only if not caught)
-    else:
-        if game_mode:
-            # === MODE A: GAME CONTROLLER ===
-            st.markdown("### 🕹️ You are the Target (🥷)")
-            c1, c2, c3, c4 = st.columns([1,1,1,2])
-            move_step = 5.0 
-            
-            with c2:
-                if st.button("⬆️", key="btn_up"):
-                    st.session_state.target_pos[1] = max(0, st.session_state.target_pos[1] - move_step)
-                    st.rerun()
-            
-            with c1:
-                if st.button("⬅️", key="btn_left"):
-                    st.session_state.target_pos[0] = max(0, st.session_state.target_pos[0] - move_step)
-                    st.rerun()
-            with c3:
-                if st.button("➡️", key="btn_right"):
-                    st.session_state.target_pos[0] = min(100, st.session_state.target_pos[0] + move_step)
-                    st.rerun()
-            with c2:
-                if st.button("⬇️", key="btn_down"):
-                    st.session_state.target_pos[1] = min(100, st.session_state.target_pos[1] + move_step)
-                    st.rerun()
-            
-            # Quick Reset for Game Mode
-            with c4:
-                if st.button("🏳️ Respawn"):
-                     st.session_state.target_pos = np.random.randint(10, 90, size=2)
-                     st.rerun()
-                    
+        grid_height = st.session_state.config.get('grid_h', 15)
+        grid_width = st.session_state.config.get('grid_w', 40)
+        
+        # Check if Maze Mode is active
+        current_maze = st.session_state.get('maze_grid', None)
+        
+        if current_maze is not None:
+            grid = [['#' if cell == 1 else '.' for cell in row] for row in current_maze]
         else:
-            # === MODE B: STANDARD SLIDERS ===
-            st.markdown("### 🧲 Focus Attention (Lure)")
-            cx, cy = st.columns(2)
-            tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx_slider')
-            ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty_slider')
+            grid = [['.' for _ in range(grid_width)] for _ in range(grid_height)]
+        
+        # Scale positions
+        agent_y = int(st.session_state.agent_pos[1] / 100 * (grid_height - 1))
+        agent_x = int(st.session_state.agent_pos[0] / 100 * (grid_width - 1))
+        target_y = int(st.session_state.target_pos[1] / 100 * (grid_height - 1))
+        target_x = int(st.session_state.target_pos[0] / 100 * (grid_width - 1))
+
+        # Bounds Checking
+        agent_y = max(0, min(agent_y, grid_height-1))
+        agent_x = max(0, min(agent_x, grid_width-1))
+        target_y = max(0, min(target_y, grid_height-1))
+        target_x = max(0, min(target_x, grid_width-1))
+
+        # --- RENDERING ICONS ---
+        if st.session_state.get('is_hugging', False):
+            grid[agent_y][agent_x] = '🫂' 
+        elif (agent_y, agent_x) == (target_y, target_x):
+            grid[agent_y][agent_x] = '💥'
+        else:
+            if game_mode:
+                ai_icon = "🤖" 
+                user_icon = "🥷"
+            else:
+                ai_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
+                user_icon = "💎"
+
+            if current_maze is not None and grid[target_y][target_x] == '#':
+                 grid[target_y][target_x] = user_icon 
+            else:
+                 grid[target_y][target_x] = user_icon
             
-            if tx != int(st.session_state.target_pos[0]) or ty != int(st.session_state.target_pos[1]):
-                st.session_state.target_pos = np.array([float(tx), float(ty)])
+            grid[agent_y][agent_x] = ai_icon
+
+        # Render Grid
+        grid_str = "\n".join(" ".join(row) for row in grid)
+        st.code(grid_str, language=None)
+
+        # -----------------------------------
+        # CONTROLS LOGIC (FIXED)
+        # -----------------------------------
+        
+        # PRIORITY 1: RELEASE HUG (Global Override)
+        if st.session_state.get('is_hugging', False):
+            st.success("Target Caught! Game Over.")
+            if st.button("🔄 Play Again (Release Hug)", type="primary"):
+                st.session_state.is_hugging = False
+                # Teleport user to a random safe spot
+                st.session_state.target_pos = np.random.randint(10, 90, size=2)
                 st.rerun()
 
+        # PRIORITY 2: MOVEMENT CONTROLS (Only if not caught)
+        else:
+            if game_mode:
+                # === MODE A: GAME CONTROLLER ===
+                st.markdown("### 🕹️ You are the Target (🥷)")
+                c1, c2, c3, c4 = st.columns([1,1,1,2])
+                move_step = 5.0 
+                
+                with c2:
+                    if st.button("⬆️", key="btn_up"):
+                        st.session_state.target_pos[1] = max(0, st.session_state.target_pos[1] - move_step)
+                        st.rerun()
+                
+                with c1:
+                    if st.button("⬅️", key="btn_left"):
+                        st.session_state.target_pos[0] = max(0, st.session_state.target_pos[0] - move_step)
+                        st.rerun()
+                with c3:
+                    if st.button("➡️", key="btn_right"):
+                        st.session_state.target_pos[0] = min(100, st.session_state.target_pos[0] + move_step)
+                        st.rerun()
+                with c2:
+                    if st.button("⬇️", key="btn_down"):
+                        st.session_state.target_pos[1] = min(100, st.session_state.target_pos[1] + move_step)
+                        st.rerun()
+                
+                # Quick Reset for Game Mode
+                with c4:
+                    if st.button("🏳️ Respawn"):
+                         st.session_state.target_pos = np.random.randint(10, 90, size=2)
+                         st.rerun()
+                        
+            else:
+                # === MODE B: STANDARD SLIDERS ===
+                st.markdown("### 🧲 Focus Attention (Lure)")
+                cx, cy = st.columns(2)
+                tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx_slider')
+                ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty_slider')
+                
+                if tx != int(st.session_state.target_pos[0]) or ty != int(st.session_state.target_pos[1]):
+                    st.session_state.target_pos = np.array([float(tx), float(ty)])
+                    st.rerun()
 
-
+# -----------------------------------
+# RIGHT COLUMN: THE BRAIN & CHAT
+# -----------------------------------
 with row1_2:
     # --- RUBIK'S SOLVER OUTPUT (Evolution Edition) ---
-    if st.session_state.get('cube_mode_active', True) and st.session_state.get('cube_result'):
+    # This block displays the solver stats if a result exists
+    if st.session_state.get('cube_result'):
         res = st.session_state.cube_result
         
         st.markdown(f"### 🧬 Evolution Protocol: {res['size']}x{res['size']}")
@@ -1230,8 +1257,8 @@ with row1_2:
 
         # 2. THE THINKING PROCESS (Cognitive Trace)
         st.caption("🧠 Neural Log (Cognitive Stream)")
-        log_box = st.empty()
-        # Visualize thinking logs like a terminal
+        
+        # Build log text
         log_txt = ""
         for line in res['thoughts']:
             log_txt += f"> {line}\n"
@@ -1249,14 +1276,10 @@ with row1_2:
         
         st.divider()
 
-    # ... (Rest of your AGI chat code)
-
     # -----------------------------------
-    # THE "AGI" INTERFACE (Existing Code follows...)
+    # THE "AGI" INTERFACE
     # -----------------------------------
     st.markdown("### 🧠 AGI Cognitive Stream")
-    # ... (rest of your chat code)
-    
     
     # 1. VISUALIZE THOUGHTS (The Inner Monologue)
     st.info(f"💭 **Inner Thought:** {st.session_state.soul.thought_process}")
@@ -1280,18 +1303,16 @@ with row1_2:
         st.session_state.chat_history.append(f"User: {user_input}")
         
         # AGI Processing
-        loss_val = st.session_state.mind.epsilon # Using epsilon as a proxy for "confusion"
+        loss_val = st.session_state.mind.epsilon 
         st.session_state.soul.ponder(user_input, loss_val)
         
         # Generate Response
         response = st.session_state.soul.speak(user_input)
         st.session_state.chat_history.append(f"AI: {response}")
         
-        # Navigation Command Override (Natural Language)
+        # Navigation Command Override
         if "come" in user_input.lower() or "here" in user_input.lower():
-            # Teleport target near agent to simulate "Coming to you"
             st.session_state.soul.thought_process = "Command received: Approach User."
-            # Set target slightly offset from current position
             st.session_state.target_pos = st.session_state.agent_pos + np.random.randint(-10, 10, size=2)
             st.rerun()
             
