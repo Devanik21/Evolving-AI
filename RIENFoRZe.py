@@ -1344,8 +1344,7 @@ with st.expander("🧩 Hyper-Cube Solver (Evolution Mode)", expanded=False):
                 st.session_state.rubiks_mind.training_stats[c_size] = {"solves": 0, "total_time": 0}
                 st.toast(f"Memory of {c_size}x{c_size} wiped. Starting fresh.", icon="🧹")
                 st.rerun()
-
-    with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=True):
+with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=True):
         # We use a specific key to track the UI state
         # Default is False so it doesn't crash on first load
         enable_maze = st.checkbox("Initialize Maze Mode", value=False, key="maze_toggle")
