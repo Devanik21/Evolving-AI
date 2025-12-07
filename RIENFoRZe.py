@@ -1345,41 +1345,6 @@ with st.expander("🧩 Hyper-Cube Solver (Evolution Mode)", expanded=False):
                 st.toast(f"Memory of {c_size}x{c_size} wiped. Starting fresh.", icon="🧹")
                 st.rerun()
 
-            # 2. SOLVE (The Test)
-            # 2. SOLVE (The Test)
-            if c2.button("⚡ Agent Solve", type="primary"):
-                if 'current_scramble' not in st.session_state:
-                    st.error("Please Scramble the cube first!")
-                else:
-                    # Run the simulation
-                    time_val, steps, thoughts, mastery = st.session_state.rubiks_mind.solve_simulation(
-                        c_size, st.session_state.current_scramble
-                    )
-                    
-                    st.session_state.cube_result = {
-                        "size": c_size,
-                        "time": time_val,
-                        "steps": steps,
-                        "thoughts": thoughts,
-                        "mastery": mastery,
-                        "scramble_len": len(st.session_state.current_scramble)
-                    }
-
-                    # --- NEW CODE: TELL THE SOUL WE WON! ---
-                    st.session_state.soul.current_mood = "Excited"
-                    st.session_state.soul.thought_process = f"ANALYSIS: Cube Solved! Complexity {c_size}x{c_size} conquered in {time_val}s."
-                    st.session_state.soul.last_chat = f"Did you see that, Prince? I solved the {c_size}x{c_size} in {len(steps)} moves!"
-                    # ---------------------------------------
-
-                    st.rerun()
-
-            # 3. RESET BRAIN (The "Lobotomy")
-            if st.button("🧠 Reset Knowledge (Wipe Memory)"):
-                st.session_state.rubiks_mind.neural_weights[c_size] = 0
-                st.toast(f"Memory of {c_size}x{c_size} wiped. AI is now a beginner.", icon="🧹")
-                st.rerun()
-
-    
     with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=True):
         # We use a specific key to track the UI state
         # Default is False so it doesn't crash on first load
