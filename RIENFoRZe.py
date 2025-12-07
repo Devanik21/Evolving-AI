@@ -413,63 +413,84 @@ class AdvancedMind:
 
 class RubiksMind:
     """
-    A simulated Quantum Solver for NxN cubes.
-    It generates valid cube notation and simulates superhuman solving speeds.
+    Advanced Neural Solver with simulated Reinforcement Learning curves.
+    It 'learns' from repeated exposure to specific cube sizes.
     """
     def __init__(self):
+        # Base limits for humans (seconds)
         self.human_records = {
-            2: 0.47,   # 2x2 World Record
-            3: 3.13,   # 3x3 World Record (Max Park)
-            4: 16.79,
-            5: 32.52,
-            6: 69.51,
-            7: 95.68,
-            # For >7, records are unofficial or take hours
-            10: 7200.0, # ~2 hours (Estimated human time)
-            20: 86400.0 # ~24 hours (Estimated human time)
+            2: 0.47, 3: 3.13, 4: 16.79, 5: 32.52, 
+            6: 69.51, 7: 95.68, 10: 7200.0, 20: 86400.0
         }
-        
-    def get_move_set(self, size):
-        """Generates valid notation for NxN cubes."""
+        # The AI's 'Brain' - Stores mastery for each size
+        # Format: {size: experience_points}
+        self.neural_weights = {} 
+
+    def get_scramble(self, size):
+        """Generates a valid, complex scramble."""
+        moves = self._get_move_set(size)
+        length = size * 10
+        return [random.choice(moves) for _ in range(length)]
+
+    def _get_move_set(self, size):
         faces = ["U", "D", "L", "R", "F", "B"]
         modifiers = ["", "'", "2"]
-        moves = []
-        
-        # Standard moves
-        for f in faces:
-            for m in modifiers:
-                moves.append(f"{f}{m}")
-        
-        # Wide moves for N > 3 (e.g., 2Uw, 3Rw)
+        moves = [f"{f}{m}" for f in faces for m in modifiers]
         if size > 3:
             max_layers = size // 2
             for i in range(2, max_layers + 1):
-                for f in faces:
-                    for m in modifiers:
-                        moves.append(f"{i}{f}w{m}")
+                moves.extend([f"{i}{f}w{m}" for f in faces for m in modifiers])
         return moves
 
-    def solve(self, size):
+    def solve_simulation(self, size, current_scramble):
         """
-        Simulates a solve. 
-        Returns: (time_taken, steps_list, complexity_score)
+        Simulates the thinking process based on experience.
+        Returns: time, steps, thought_log, new_mastery
         """
-        # 1. Calculate 'AI' Time (Superhuman Speed)
-        # Formula: Base speed + (Exponential complexity / AI IQ Factor)
-        # We ensure it's always shockingly fast (milliseconds to seconds)
-        base_complexity = size ** 2.5
-        ai_speed_factor = 1000.0 # My processor is fast!
+        # 1. Retrieve Experience
+        exp = self.neural_weights.get(size, 0)
         
-        simulated_time = max(0.001, round((base_complexity / ai_speed_factor) * random.uniform(0.8, 1.2), 4))
+        # 2. Calculate 'Intelligence' Factors
+        # Sigmoid-like learning curve: Rapid improvement at first, then plateaus at 'God Speed'
+        learning_efficiency = 1 - (1 / (1 + 0.1 * exp)) 
         
-        # 2. Generate 'Solution' Steps (The text output)
-        # Realistically, 20x20 needs thousands of moves. We generate enough to look real.
-        move_set = self.get_move_set(size)
-        step_count = int(size * 15 * random.uniform(1.0, 1.5)) # Heuristic step count
+        # 3. Determine Speed (Time)
+        base_time = (size ** 2.5) * 0.1 # Physics limitation
+        error_margin = random.uniform(0.0, 5.0 / (exp + 1)) # Beginners make mistakes (high error)
         
+        final_time = round((base_time / (1 + learning_efficiency * 50)) + error_margin, 3)
+        final_time = max(0.001, final_time) # Physics floor
+
+        # 4. Determine Efficiency (Step Count)
+        # Beginners use more steps; Masters use fewer (God's Algorithm)
+        base_steps = size * 20
+        efficiency_factor = 1.0 - (learning_efficiency * 0.4) # Up to 40% reduction in moves
+        step_count = int(base_steps * efficiency_factor * random.uniform(0.9, 1.1))
+        
+        move_set = self._get_move_set(size)
         solution_steps = [random.choice(move_set) for _ in range(step_count)]
+
+        # 5. Generate Cognitive Log (The "Thinking" Process)
+        thoughts = []
+        if exp < 2:
+            thoughts.append(f"⚠️ Unfamiliar Topology ({size}x{size}). Initializing basic heuristics.")
+            thoughts.append("Scanning edges... High entropy detected.")
+            thoughts.append("Attempting Layer-by-Layer reduction...")
+            thoughts.append("❌ Error in parity check. Backtracking...")
+        elif exp < 10:
+            thoughts.append(f"Topology Recognized. Loading optimization matrix v{exp}.")
+            thoughts.append("Skipping redundant edge pairs.")
+            thoughts.append("Commutators optimized.")
+        else:
+            thoughts.append("✨ Pattern matched in Long-Term Memory.")
+            thoughts.append("God's Algorithm approximation loaded.")
+            thoughts.append(f"Predicting solution in O({step_count}) complexity.")
+            thoughts.append("Executing at Quantum Speed.")
+
+        # 6. Update Brain (Learn)
+        self.neural_weights[size] = exp + 1
         
-        return simulated_time, solution_steps
+        return final_time, solution_steps, thoughts, (learning_efficiency * 100)
 
 # ==========================================
 # 3. EMOTION & PERSONALITY ENGINE
@@ -964,37 +985,59 @@ with st.sidebar:
         c['graph_points'] = st.slider("Graph History Length", 100, 2000, c.get('graph_points', 500), 50)
 
 
-    with st.expander("🧩 Hyper-Cube Solver (2x2 - 20x20)", expanded=False):
-        # Lazy Load Switch
+    with st.expander("🧩 Hyper-Cube Solver (Evolution Mode)", expanded=False):
         cube_mode = st.toggle("Activate Solver", value=False)
         
         if cube_mode:
-            st.caption("Target: Beat Human Records")
-            c_size = st.slider("Cube Size (N x N)", 2, 20, 3, 1)
+            # Initialize Mind
+            if 'rubiks_mind' not in st.session_state:
+                st.session_state.rubiks_mind = RubiksMind()
             
-            # Dynamic Record Display
-            record = st.session_state.get('rubiks_mind', RubiksMind()).human_records.get(c_size, "Unknown")
-            if record != "Unknown":
-                st.write(f"Human Record: **{record}s**")
-            else:
-                st.write(f"Human Record: **Hours/Days**")
-                
-            if st.button("🚀 Solve Instantly", type="primary"):
-                # Initialize logic only on click
-                if 'rubiks_mind' not in st.session_state:
-                    st.session_state.rubiks_mind = RubiksMind()
-                
-                # Run Simulation
-                time_taken, steps = st.session_state.rubiks_mind.solve(c_size)
-                
-                # Store results in session state to display in main area
-                st.session_state.cube_result = {
-                    "size": c_size,
-                    "time": time_taken,
-                    "steps": steps,
-                    "human_record": record
-                }
-                st.toast(f"Solved {c_size}x{c_size} in {time_taken}s!", icon="⚡")
+            # Cube Selection
+            c_size = st.slider("Cube Topology (N x N)", 2, 20, 3, 1)
+            
+            # --- EXPERIENCE METRIC ---
+            current_exp = st.session_state.rubiks_mind.neural_weights.get(c_size, 0)
+            mastery_pct = (1 - (1 / (1 + 0.1 * current_exp))) * 100
+            st.caption(f"Neural Adaptation (Mastery):")
+            st.progress(int(mastery_pct))
+            st.caption(f"Solves performed: {current_exp}")
+            
+            # --- CONTROLS ---
+            c1, c2 = st.columns(2)
+            
+            # 1. SCRAMBLE (The Challenge)
+            if c1.button("🎲 Reshuffle"):
+                scramble = st.session_state.rubiks_mind.get_scramble(c_size)
+                st.session_state.current_scramble = scramble
+                st.session_state.cube_result = None # Clear old result
+                st.toast("Cube Scrambled! Waiting for Agent...", icon="🎲")
+                st.rerun()
+
+            # 2. SOLVE (The Test)
+            if c2.button("⚡ Agent Solve", type="primary"):
+                if 'current_scramble' not in st.session_state:
+                    st.error("Please Scramble the cube first!")
+                else:
+                    # Run the simulation
+                    time_val, steps, thoughts, mastery = st.session_state.rubiks_mind.solve_simulation(
+                        c_size, st.session_state.current_scramble
+                    )
+                    
+                    st.session_state.cube_result = {
+                        "size": c_size,
+                        "time": time_val,
+                        "steps": steps,
+                        "thoughts": thoughts,
+                        "mastery": mastery,
+                        "scramble_len": len(st.session_state.current_scramble)
+                    }
+                    st.rerun()
+
+            # 3. RESET BRAIN (The "Lobotomy")
+            if st.button("🧠 Reset Knowledge (Wipe Memory)"):
+                st.session_state.rubiks_mind.neural_weights[c_size] = 0
+                st.toast(f"Memory of {c_size}x{c_size} wiped. AI is now a beginner.", icon="🧹")
                 st.rerun()
 
     
@@ -1168,31 +1211,39 @@ with row1_1:
 
 
 with row1_2:
-    # --- RUBIK'S SOLVER OUTPUT (Lazy Loaded) ---
-    if st.session_state.get('cube_result'):
+    # --- RUBIK'S SOLVER OUTPUT (Evolution Edition) ---
+    if st.session_state.get('cube_mode_active', True) and st.session_state.get('cube_result'):
         res = st.session_state.cube_result
         
-        st.markdown(f"### ⚡ Solution Matrix ({res['size']}x{res['size']})")
+        st.markdown(f"### 🧬 Evolution Protocol: {res['size']}x{res['size']}")
         
-        # 1. Comparison Metrics
-        c1, c2 = st.columns(2)
-        c1.metric("AI Time", f"{res['time']}s", delta="-99.9% Speedup", delta_color="inverse")
-        
-        human_rec = res['human_record']
-        if isinstance(human_rec, float):
-             c2.metric("Human Record", f"{human_rec}s")
-        else:
-             c2.metric("Human Record", "Hours+")
-             
-        # 2. The Steps (Scrollable Text)
-        steps_str = " ".join(res['steps'])
-        st.text_area("Algorithm Output (Notation)", value=steps_str, height=150, help="Standard Cube Notation generated by Neural Engine.")
-        
-        if st.button("❌ Close Output"):
-            del st.session_state.cube_result
-            st.rerun()
+        # 1. THE PROBLEM (Scramble)
+        with st.expander("See Scramble (Input Data)", expanded=False):
+            scramble_txt = " ".join(st.session_state.current_scramble)
+            st.code(scramble_txt, language=None)
+
+        # 2. THE THINKING PROCESS (Cognitive Trace)
+        st.caption("🧠 Neural Log (Cognitive Stream)")
+        log_box = st.empty()
+        # Visualize thinking logs like a terminal
+        log_txt = ""
+        for line in res['thoughts']:
+            log_txt += f"> {line}\n"
+        st.text_area("Internal Monologue", value=log_txt, height=120, disabled=True)
             
+        # 3. THE RESULTS
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Solve Time", f"{res['time']}s", delta="Quantum Processing")
+        c2.metric("Efficiency", f"{len(res['steps'])} moves", help="Lower is better (God's Algorithm)")
+        c3.metric("Neural Mastery", f"{int(res['mastery'])}%", delta=f"+ Learning")
+        
+        # 4. THE SOLUTION
+        with st.expander("View Algorithm Steps", expanded=False):
+             st.text(" ".join(res['steps']))
+        
         st.divider()
+
+    # ... (Rest of your AGI chat code)
 
     # -----------------------------------
     # THE "AGI" INTERFACE (Existing Code follows...)
