@@ -587,6 +587,12 @@ if 'config' not in st.session_state: # Hotfix for adding config to old sessions
     st.session_state.config = {} # Will be populated by sidebar code
 
 
+if 'rubiks_mind' in st.session_state:
+    if not hasattr(st.session_state.rubiks_mind, 'neural_weights'):
+        st.session_state.rubiks_mind = RubiksMind() # Force upgrade to new Class
+        st.toast("🧩 Rubik's Core Upgraded successfully!", icon="🆙")
+
+
 
 
 
