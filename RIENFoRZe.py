@@ -1387,13 +1387,13 @@ with st.expander("🧩 Labyrinth Protocol (Mini-Game)", expanded=True):
                 st.rerun() # Force main screen to remove walls instantly
                 
     # --- Update mind's parameters if they change ---
-    st.session_state.mind.learning_rate = lr
-    st.session_state.mind.epsilon_decay = ed
-    st.session_state.mind.gamma = g
-    st.session_state.mind.epsilon_min = c['epsilon_min']
-    st.session_state.mind.memory.prob_alpha = c['per_alpha']
-    st.session_state.mind.beta = c['per_beta']
-    st.session_state.mind.beta_increment = c['per_beta_increment']
+st.session_state.mind.learning_rate = lr
+st.session_state.mind.epsilon_decay = ed
+st.session_state.mind.gamma = g
+st.session_state.mind.epsilon_min = c['epsilon_min']
+st.session_state.mind.memory.prob_alpha = c['per_alpha']
+st.session_state.mind.beta = c['per_beta']
+st.session_state.mind.beta_increment = c['per_beta_increment']
 
 # ==========================================
 # MAIN INTERACTION AREA (Dynamic Layout)
