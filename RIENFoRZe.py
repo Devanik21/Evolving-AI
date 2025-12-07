@@ -1168,10 +1168,6 @@ with row1_1:
 
 
 with row1_2:
-    # -----------------------------------
-    # THE "AGI" INTERFACE
-    # -----------------------------------
-    with row1_2:
     # --- RUBIK'S SOLVER OUTPUT (Lazy Loaded) ---
     if st.session_state.get('cube_result'):
         res = st.session_state.cube_result
@@ -1202,6 +1198,7 @@ with row1_2:
     # THE "AGI" INTERFACE (Existing Code follows...)
     # -----------------------------------
     st.markdown("### 🧠 AGI Cognitive Stream")
+    # ... (rest of your chat code)
     
     
     # 1. VISUALIZE THOUGHTS (The Inner Monologue)
