@@ -942,14 +942,14 @@ with row1_1:
     # -----------------------------------
     st.markdown("### 🌍 Containment Field")
     
-    # --- GAME MODE TOGGLE (LAZY LOAD) ---
-    # The game logic only exists if this is checked
-    game_mode = st.toggle("🎮 Activate Hide & Seek Protocol", value=False)
+    # --- GAME MODE TOGGLE ---
+    # We check the state first. If changed, we force a rerun to update UI immediately.
+    game_mode = st.toggle("🎮 Activate Hide & Seek Protocol", value=False, key="game_mode_toggle")
 
     grid_height = st.session_state.config.get('grid_h', 15)
     grid_width = st.session_state.config.get('grid_w', 40)
     
-    # Check if Maze Mode is active
+    # Check if Maze Mode is active (handled by Sidebar)
     current_maze = st.session_state.get('maze_grid', None)
     
     if current_maze is not None:
@@ -985,7 +985,7 @@ with row1_1:
             ai_icon = st.session_state.soul.moods.get(st.session_state.soul.current_mood, "❤️")
             user_icon = "💎"
 
-        # Draw Target (User)
+        # Draw Target (User) - Ensure we don't overwrite walls in Maze Mode
         if current_maze is not None and grid[target_y][target_x] == '#':
              grid[target_y][target_x] = user_icon 
         else:
@@ -998,15 +998,14 @@ with row1_1:
     grid_str = "\n".join(" ".join(row) for row in grid)
     st.code(grid_str, language=None)
 
-    # --- GAME CONTROLS (Only visible if Game Mode is ON) ---
+    # --- CONTROLS SPLIT ---
     if game_mode:
+        # === MODE A: GAME CONTROLLER ===
         st.markdown("### 🕹️ You are the Target (🥷)")
         st.caption("Use the D-Pad to run away from the AI!")
         
-        # D-PAD Layout
         c1, c2, c3, c4 = st.columns([1,1,1,2])
-        
-        move_step = 5.0 # How fast you run
+        move_step = 5.0 
         
         with c2:
             if st.button("⬆️", key="btn_up"):
@@ -1028,7 +1027,7 @@ with row1_1:
                 st.rerun()
                 
     else:
-        # Standard Sliders (Legacy Mode)
+        # === MODE B: STANDARD SLIDERS ===
         if st.session_state.get('is_hugging', False):
             st.success("Target Acquired! Protocol: HUG initiated.")
             if st.button("🥰 Release Hug & Continue"):
@@ -1038,14 +1037,15 @@ with row1_1:
         
         st.markdown("### 🧲 Focus Attention (Lure)")
         cx, cy = st.columns(2)
-        tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx')
-        ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty')
+        # We use standard sliders here.
+        # KEY FIX: Ensure these keys are unique so they don't conflict with other logic
+        tx = cx.slider("Horizontal Focus", 0, 100, int(st.session_state.target_pos[0]), key='tx_slider')
+        ty = cy.slider("Vertical Focus", 0, 100, int(st.session_state.target_pos[1]), key='ty_slider')
         
         # Update target from user input
         if tx != int(st.session_state.target_pos[0]) or ty != int(st.session_state.target_pos[1]):
             st.session_state.target_pos = np.array([float(tx), float(ty)])
             st.rerun()
-
 
 with row1_2:
     # -----------------------------------
