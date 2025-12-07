@@ -1115,11 +1115,15 @@ with st.sidebar:
 
 # 1. VIEW CONTROLLER (Bulletproof Persistence)
 # Check if the memory slot exists. If not, create it and set to True (Show by default)
-if "map_active" not in st.session_state:
-    st.session_state.map_active = True
+# ==========================================
+# MAIN INTERACTION AREA (Dynamic Layout)
+# ==========================================
 
-# We remove the 'value=' parameter and rely 100% on the key matching the state above
-show_field = st.toggle("🌍 Show Containment Field", key="map_active")
+# 1. VIEW CONTROLLER
+# We use a fresh key 'field_visibility_v3'.
+# value=True -> Starts ON by default.
+# key="..." -> Tells Streamlit to REMEMBER if you turn it OFF.
+show_field = st.toggle("🌍 Show Containment Field", value=True, key="field_visibility_v3")
 
 # 2. DYNAMIC COLUMN GENERATION
 if show_field:
@@ -1129,7 +1133,6 @@ else:
     # Focus Mode: Brain takes Full Width
     row1_1 = None 
     row1_2 = st.container()
-
 # -----------------------------------
 # LEFT COLUMN: THE WORLD (Conditional)
 # -----------------------------------
