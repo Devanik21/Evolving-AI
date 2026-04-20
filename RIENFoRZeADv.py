@@ -1362,20 +1362,10 @@ def _tab_memory():
 
     with mc2:
         # Semantic knowledge
-        # Semantic knowledge
         st.markdown('<div class="panel-header">📖 SEMANTIC KNOWLEDGE</div>',
                     unsafe_allow_html=True)
         sem_sum = mem_st.get("semantic_summary", {})
-        
-        # Defensively handle cases where the backend returns a string instead of a dict
-        if isinstance(sem_sum, str):
-            try:
-                sem_sum = json.loads(sem_sum)
-            except Exception:
-                sem_sum = {}
-
-        # Safely extract metrics only if we have a valid dictionary
-        if isinstance(sem_sum, dict) and sem_sum:
+        if sem_sum:
             total = sem_sum.get("total_facts", 0)
             hi    = sem_sum.get("high_confidence_count", 0)
             st.markdown(
@@ -1385,7 +1375,6 @@ def _tab_memory():
                 f'</div>',
                 unsafe_allow_html=True,
             )
-          
         for fact in mem_st.get("semantic_facts",[])[:10]:
             conf = float(fact.get("confidence", 0))
             cc   = "#22c55e" if conf > 0.7 else ("#f97316" if conf > 0.4 else "#ef4444")
@@ -1560,621 +1549,59 @@ def _tab_brain():
     with ba2:
         st.markdown('<div class="panel-header">⚖️ W1 WEIGHT DISTRIBUTION</div>',
                     unsafe_allow_html=True)
-        # W1 weight distribution histogram
-        w1_flat = ss.brain.online_net.W1.flatten()
+
         if _PLOTLY:
-            fig_w = go.Figure(go.Histogram(
-                x=w1_flat,
-                nbinsx=60,
-                marker_color="rgba(0,245,255,.55)",
-                marker_line=dict(color="rgba(0,245,255,.15)", width=.5),
+            w1 = ss.brain.online_net.W1.flatten()
+            fig_w1 = go.Figure(go.Histogram(
+                x=w1, nbinsx=50,
+                marker_color="rgba(0, 245, 255, 0.75)",
+                line=dict(color="#00f5ff", width=1)
             ))
-            fig_w.update_layout(
-                **{**_L,
-                   "title": dict(text="W1 Weight Distribution", font=dict(size=10, color="#8b949e")),
-                   "height": 190,
-                   "bargap": 0.05,
-                   "yaxis": dict(**_L["yaxis"], title=""),
-                   "xaxis": dict(**_L["xaxis"], title="Weight Value"),
-                   },
+            lay = dict(_L)
+            lay.update(
+                title=dict(text="W1 Layer Weights", font=dict(size=10, color="#8b949e")),
+                height=220,
+                margin=dict(l=30, r=10, t=30, b=30),
             )
-            st.plotly_chart(fig_w, use_container_width=True, key="cht_w1")
+            fig_w1.update_layout(**lay)
+            st.plotly_chart(fig_w1, use_container_width=True, key="cht_w1")
 
-        # W1 stat line
-        st.markdown(
-            f'<div style="font-size:.68rem;color:#6e7681;display:flex;gap:16px;margin-top:2px;">'
-            f'  <span>μ=<b style="color:#00f5ff;">{w1_flat.mean():.4f}</b></span>'
-            f'  <span>σ=<b style="color:#a855f7;">{w1_flat.std():.4f}</b></span>'
-            f'  <span>|max|=<b style="color:#f97316;">{np.abs(w1_flat).max():.4f}</b></span>'
-            f'  <span>sparsity=<b style="color:#22c55e;">'
-            f'{(np.abs(w1_flat)<0.01).mean()*100:.1f}%</b></span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("")
-        st.markdown('<div class="panel-header">🔬 ICM STATE COVERAGE</div>',
+        st.markdown('<div class="panel-header">🔍 INTRINSIC CURIOSITY (ICM)</div>',
                     unsafe_allow_html=True)
-
-        H, W = ss.env.maze.shape
-        icm_hm = ss.brain.curiosity.heatmap(H, W)
+        hm = ss.brain.curiosity.heatmap(ss.env.maze_h, ss.env.maze_w)
         if _PLOTLY:
-            fig_icm = _heatmap_plot(icm_hm, f"ICM Visit Density — {len(ss.brain.curiosity.counts):,} unique states")
-            st.plotly_chart(fig_icm, use_container_width=True, key="cht_icm_hm")
-
-        # ICM stats
-        total_visits = sum(ss.brain.curiosity.counts.values()) if ss.brain.curiosity.counts else 0
-        top_visited  = max(ss.brain.curiosity.counts.values()) if ss.brain.curiosity.counts else 0
-        st.markdown(
-            f'<div style="font-size:.68rem;color:#6e7681;line-height:2.0;">'
-            f'  Unique states: <b style="color:#00f5ff;">{ss.brain.curiosity.coverage():,}</b> &nbsp;|&nbsp;'
-            f'  Total visits: <b style="color:#a855f7;">{total_visits:,}</b> &nbsp;|&nbsp;'
-            f'  Max visits/state: <b style="color:#f97316;">{top_visited:,}</b><br>'
-            f'  β (curiosity): <b style="color:#22c55e;">{ss.brain.curiosity.beta}</b>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("")
-        st.markdown('<div class="panel-header">📉 RECENT LOSS TRACE</div>',
-                    unsafe_allow_html=True)
-        br_st2   = ss.brain.get_stats()
-        rec_loss = list(ss.brain.recent_losses)
-        rec_td   = list(ss.brain.recent_td_errors)
-        if rec_loss and _PLOTLY:
-            fig_lt = _line_chart(
-                x=list(range(len(rec_loss))),
-                traces=[
-                    {"y": rec_loss, "name": "Loss",     "color": "#f97316", "w": 1.3},
-                    {"y": rec_td,   "name": "TD Error",  "color": "#ef4444", "w": 1.0},
-                ],
-                title=f"Last {len(rec_loss)} Steps — Loss & TD Error",
-                height=200,
-            )
-            st.plotly_chart(fig_lt, use_container_width=True, key="cht_brain_loss")
-
-        # Quick stats summary
-        st.markdown(
-            f'<div style="font-size:.72rem;line-height:2.0;">'
-            f'  <div>'
-            f'    <span style="color:#6e7681;">Train Steps:</span> '
-            f'    <b style="color:#00f5ff;">{br_st2["train_step"]:,}</b>'
-            f'  </div>'
-            f'  <div>'
-            f'    <span style="color:#6e7681;">Avg Loss:</span> '
-            f'    <b style="color:#f97316;">{br_st2["avg_loss"]:.6f}</b>'
-            f'  </div>'
-            f'  <div>'
-            f'    <span style="color:#6e7681;">Avg TD-Error:</span> '
-            f'    <b style="color:#ef4444;">{br_st2["avg_td_error"]:.5f}</b>'
-            f'  </div>'
-            f'  <div>'
-            f'    <span style="color:#6e7681;">LR (current):</span> '
-            f'    <b style="color:#22c55e;">{br_st2["lr"]:.7f}</b>'
-            f'  </div>'
-            f'  <div>'
-            f'    <span style="color:#6e7681;">LR Reductions:</span> '
-            f'    <b style="color:#a855f7;">{ss.brain.lr_sched.reductions}</b>'
-            f'  </div>'
-            f'  <div>'
-            f'    <span style="color:#6e7681;">Buffer Fill:</span> '
-            f'    <b style="color:#58a6ff;">{br_st2["memory_size"]:,} / '
-            f'{ss.brain.memory.capacity:,}</b>'
-            f'  </div>'
-            f'  <div>'
-            f'    <span style="color:#6e7681;">ε (epsilon):</span> '
-            f'    <b style="color:#fbbf24;">{br_st2["epsilon"]:.5f}</b>'
-            f'  </div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("---")
-
-    # ── PER Priority distribution ───────────────────────────────────
-    st.markdown('<div class="panel-header">📊 PER PRIORITY DISTRIBUTION</div>',
-                unsafe_allow_html=True)
-
-    per_buf = ss.brain.memory
-    if per_buf.size > 0 and _PLOTLY:
-        sample_n  = min(per_buf.size, 2000)
-        prios     = [per_buf.sum_tree[i] for i in
-                     np.random.choice(per_buf.size, sample_n, replace=False).tolist()]
-        prios     = [p for p in prios if p > 0]
-        if prios:
-            fig_per = go.Figure(go.Histogram(
-                x=prios, nbinsx=50,
-                marker_color="rgba(249,115,22,.55)",
-                marker_line=dict(color="rgba(249,115,22,.2)", width=.5),
-            ))
-            fig_per.update_layout(**{
-                **_L,
-                "title": dict(text=f"PER Priority Dist. (n={len(prios)}) — β={per_buf.beta:.3f}",
-                              font=dict(size=10, color="#8b949e")),
-                "height": 185,
-                "xaxis": dict(**_L["xaxis"], title="Priority"),
-                "yaxis": dict(**_L["yaxis"], title="Count"),
-            })
-            st.plotly_chart(fig_per, use_container_width=True, key="cht_per")
-    else:
-        st.caption("Buffer too small to sample priorities yet.")
-
-    # ── N-step buffer peek ──────────────────────────────────────────
-    st.markdown("")
-    st.markdown('<div class="panel-header">🔗 N-STEP RETURN BUFFER</div>',
-                unsafe_allow_html=True)
-    ns_buf = list(ss.brain.n_step.buf)
-    if ns_buf:
-        ns_rows = []
-        for i, (_, act, rew, _, done) in enumerate(ns_buf):
-            ns_rows.append({
-                "Slot": i,
-                "Action": ["↑","↓","←","→"][int(act)],
-                "Reward": f"{rew:+.3f}",
-                "Done":   "✅" if done else "·",
-            })
-        st.dataframe(
-            pd.DataFrame(ns_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.caption("N-step buffer is empty (agent hasn't started stepping yet).")
-
-    # ── Curriculum history table ────────────────────────────────────
-    st.markdown("")
-    st.markdown('<div class="panel-header">📜 CURRICULUM HISTORY (last 50)</div>',
-                unsafe_allow_html=True)
-    cur_hist = ss.brain.curriculum.history[-50:]
-    if cur_hist:
-        df_cur = pd.DataFrame(cur_hist)
-        df_cur.index = range(max(0, len(ss.brain.curriculum.history) - len(cur_hist)),
-                             len(ss.brain.curriculum.history))
-        st.dataframe(
-            df_cur.style.applymap(
-                lambda v: "color:#22c55e;" if v is True else
-                          ("color:#ef4444;" if v is False else ""),
-                subset=["success"] if "success" in df_cur.columns else []
-            ),
-            use_container_width=True,
-        )
-    else:
-        st.caption("No curriculum history yet.")
-
+            fig_icm = _heatmap_plot(hm, f"Novelty Map Coverage: {ss.brain.curiosity.coverage()} states")
+            st.plotly_chart(fig_icm, use_container_width=True, key="cht_icm")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# TAB 6 — EPISODE TIMELINE
+# MAIN APP ROUTER
 # ═════════════════════════════════════════════════════════════════════════════
-def _tab_timeline():
-    ss  = st.session_state
-    eps = ss.analytics.tracker.episodes
-
-    st.markdown('<div class="panel-header">📅 EPISODE TIMELINE</div>',
-                unsafe_allow_html=True)
-
-    if not eps:
-        st.info("No episodes recorded yet. Start the simulation.")
-        return
-
-    # ── Scatter: reward over time, colored by success ───────────────
-    if _PLOTLY:
-        ep_idxs   = list(range(len(eps)))
-        rewards   = [e["reward"]  for e in eps]
-        successes = [e["success"] for e in eps]
-        levels    = [e.get("level", 1) for e in eps]
-        steps     = [e["steps"]   for e in eps]
-        opts      = [e.get("optimality", 0) for e in eps]
-
-        colors = ["#22c55e" if s else "#ef4444" for s in successes]
-
-        fig_scatter = go.Figure()
-        # Failure trace
-        fail_x = [i for i, s in enumerate(successes) if not s]
-        fail_y = [rewards[i] for i in fail_x]
-        fig_scatter.add_trace(go.Scatter(
-            x=fail_x, y=fail_y, mode="markers",
-            marker=dict(color="rgba(239,68,68,.45)", size=5, symbol="circle"),
-            name="Failed",
-        ))
-        # Success trace
-        succ_x = [i for i, s in enumerate(successes) if s]
-        succ_y = [rewards[i] for i in succ_x]
-        fig_scatter.add_trace(go.Scatter(
-            x=succ_x, y=succ_y, mode="markers",
-            marker=dict(color="rgba(34,197,94,.65)", size=6, symbol="diamond"),
-            name="Success",
-        ))
-        # EMA overlay
-        from analytics import exponential_moving_average
-        ema_r = exponential_moving_average(rewards, alpha=0.05)
-        fig_scatter.add_trace(go.Scatter(
-            x=ep_idxs, y=ema_r, mode="lines",
-            line=dict(color="#00f5ff", width=2.0), name="EMA",
-        ))
-        fig_scatter.update_layout(**{
-            **_L,
-            "title": dict(text="Reward per Episode (Success=🟢 / Fail=🔴)", font=dict(size=10, color="#8b949e")),
-            "height": 280,
-            "legend": dict(font=dict(size=9, color="#8b949e"), bgcolor="rgba(0,0,0,0)"),
-        })
-        st.plotly_chart(fig_scatter, use_container_width=True, key="cht_timeline_scatter")
-
-        # ── 3-panel: Steps / Optimality / Level ─────────────────────
-        t1, t2, t3 = st.columns(3)
-
-        with t1:
-            fig_st = _line_chart(
-                ep_idxs,
-                [{"y": steps, "name": "Steps", "color": "#58a6ff", "w": 1.2}],
-                "Steps per Episode", 220,
-            )
-            st.plotly_chart(fig_st, use_container_width=True, key="cht_tl_steps")
-
-        with t2:
-            fig_opt = _line_chart(
-                ep_idxs,
-                [{"y": opts,  "name": "Optimality", "color": "#22c55e", "w": 1.4,
-                  "fill": "tozeroy", "fillcolor": "rgba(34,197,94,.06)"}],
-                "Path Optimality", 220,
-            )
-            fig_opt.update_layout(yaxis=dict(range=[0, 1]))
-            st.plotly_chart(fig_opt, use_container_width=True, key="cht_tl_opt")
-
-        with t3:
-            fig_lv = _line_chart(
-                ep_idxs,
-                [{"y": levels, "name": "Level", "color": "#a855f7", "w": 1.6}],
-                "Curriculum Level", 220,
-            )
-            fig_lv.update_layout(yaxis=dict(range=[0.5, 10.5]))
-            st.plotly_chart(fig_lv, use_container_width=True, key="cht_tl_lvl")
-
-    # ── Episode detail table ─────────────────────────────────────────
-    st.markdown("")
-    st.markdown('<div class="panel-header">🔍 EPISODE DETAIL (last 100)</div>',
-                unsafe_allow_html=True)
-
-    col_filter, col_sort = st.columns([2, 1])
-    show_only = col_filter.selectbox(
-        "Filter", ["All", "Successes Only", "Failures Only"], key="tl_filter",
-        label_visibility="collapsed",
-    )
-    sort_by = col_sort.selectbox(
-        "Sort By", ["Episode ↓", "Reward ↓", "Steps ↓", "Optimality ↓"],
-        key="tl_sort", label_visibility="collapsed",
-    )
-
-    rows = []
-    for idx, e in enumerate(eps):
-        if show_only == "Successes Only" and not e["success"]:
-            continue
-        if show_only == "Failures Only" and e["success"]:
-            continue
-        rows.append({
-            "Ep":          idx,
-            "✓":           "✅" if e["success"] else "❌",
-            "Reward":      round(e["reward"], 3),
-            "Steps":       e["steps"],
-            "Optimality":  f'{e.get("optimality",0)*100:.1f}%',
-            "Level":       e.get("level", 1),
-            "Fog":         f'{e.get("fog_coverage",1.0)*100:.0f}%',
-        })
-
-    if rows:
-        sort_map = {
-            "Episode ↓":    ("Ep",         True),
-            "Reward ↓":     ("Reward",      True),
-            "Steps ↓":      ("Steps",       True),
-            "Optimality ↓": ("Optimality",  True),
-        }
-        col_s, desc = sort_map.get(sort_by, ("Ep", True))
-        rows_sorted = sorted(rows, key=lambda r: r[col_s]
-                             if isinstance(r[col_s], (int, float)) else 0, reverse=desc)[-100:]
-        st.dataframe(pd.DataFrame(rows_sorted), use_container_width=True, hide_index=True)
-
-    # ── Cumulative success rate ──────────────────────────────────────
-    if eps and _PLOTLY:
-        st.markdown("")
-        st.markdown('<div class="panel-header">📈 CUMULATIVE SUCCESS RATE</div>',
-                    unsafe_allow_html=True)
-        cumulative = []
-        s_count = 0
-        for i, e in enumerate(eps):
-            s_count += int(e["success"])
-            cumulative.append(s_count / (i + 1))
-        fig_cum = _line_chart(
-            list(range(len(cumulative))),
-            [{"y": cumulative, "name": "Cum. Success", "color": "#00f5ff", "w": 2.0,
-              "fill": "tozeroy", "fillcolor": "rgba(0,245,255,.05)"}],
-            "Cumulative Success Rate",
-            200,
-        )
-        fig_cum.update_layout(yaxis=dict(range=[0, 1]))
-        st.plotly_chart(fig_cum, use_container_width=True, key="cht_cum_succ")
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# TAB 7 — BENCHMARK & DIAGNOSTICS
-# ═════════════════════════════════════════════════════════════════════════════
-def _tab_benchmark():
-    ss   = st.session_state
-    live = ss.analytics.get_live_stats()
-    br_st = ss.brain.get_stats()
-
-    st.markdown('<div class="panel-header">🏆 PERFORMANCE BENCHMARKS</div>',
-                unsafe_allow_html=True)
-
-    # ── Capability gauge ─────────────────────────────────────────────
-    cap = ss.capability_score or 0.0
-    cap_pct = cap / 100.0
-    tier_label, tier_color = (
-        ("NOVICE",    "#ef4444") if cap < 20  else
-        ("LEARNING",  "#f97316") if cap < 40  else
-        ("COMPETENT", "#fbbf24") if cap < 60  else
-        ("PROFICIENT","#22c55e") if cap < 80  else
-        ("EXPERT",    "#00f5ff")
-    )
-
-    st.markdown(
-        f'<div style="text-align:center;padding:18px 0;">'
-        f'  <div style="font-size:3.2rem;font-weight:900;font-family:\'JetBrains Mono\',monospace;'
-        f'              color:{tier_color};letter-spacing:.04em;">{cap:.1f}</div>'
-        f'  <div style="font-size:.75rem;color:#6e7681;letter-spacing:.1em;">CAPABILITY SCORE / 100</div>'
-        f'  <div style="margin:10px auto;max-width:350px;">{_pb(cap_pct, tier_color)}</div>'
-        f'  <span class="badge" style="background:rgba(0,0,0,.3);'
-        f'    border:1px solid {tier_color};color:{tier_color};font-size:.8rem;">'
-        f'    {tier_label}</span>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("---")
-
-    # ── Score breakdown ──────────────────────────────────────────────
-    st.markdown('<div class="panel-header">🔢 SCORE BREAKDOWN</div>',
-                unsafe_allow_html=True)
-
-    success_score   = ss.analytics.tracker.success_rate * 40.0
-    opt_score       = ss.analytics.tracker.avg_optimality * 25.0
-    H, W            = ss.env.maze.shape
-    cov             = ss.analytics.heatmap.coverage(H, W, ss.env.maze)
-    explore_score   = min(cov, 1.0) * 15.0
-    conv_state      = ss.analytics.tracker.convergence.state
-    conv_score      = {
-        'warming_up': 2.0, 'rapid_learning': 8.0, 'fine_tuning': 7.0,
-        'converged': 10.0, 'plateau': 4.0, 'regressing': 0.0,
-    }.get(conv_state, 0.0)
-    level_score     = ((ss.brain.curriculum.level - 1) / 9.0) * 10.0
-
-    components = [
-        ("Success Rate (×40)",   success_score,  40.0, "#22c55e"),
-        ("Path Efficiency (×25)", opt_score,      25.0, "#00f5ff"),
-        ("Exploration (×15)",    explore_score,  15.0, "#58a6ff"),
-        ("Convergence (×10)",    conv_score,     10.0, "#a855f7"),
-        ("Curriculum Level (×10)", level_score,  10.0, "#f97316"),
-    ]
-
-    bm1, bm2 = st.columns(2)
-    for i, (label, score, max_score, color) in enumerate(components):
-        col = bm1 if i % 2 == 0 else bm2
-        with col:
-            st.markdown(
-                f'<div style="margin-bottom:10px;">'
-                f'  <div style="display:flex;justify-content:space-between;'
-                f'              font-size:.72rem;margin-bottom:3px;">'
-                f'    <span style="color:#c9d1d9;">{label}</span>'
-                f'    <span style="color:{color};font-weight:700;">'
-                f'      {score:.1f} / {max_score:.0f}</span>'
-                f'  </div>'
-                f'  {_pb(score / max_score if max_score > 0 else 0, color)}'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-    if _PLOTLY:
-        # Radar chart of score breakdown
-        labels   = ["Success", "Efficiency", "Exploration", "Convergence", "Curriculum"]
-        vals_raw = [success_score/40.0, opt_score/25.0, explore_score/15.0,
-                    conv_score/10.0, level_score/10.0]
-        vals_pct = vals_raw + [vals_raw[0]]
-        labs_c   = labels + [labels[0]]
-
-        fig_radar = go.Figure(go.Scatterpolar(
-            r=vals_pct, theta=labs_c, fill="toself",
-            fillcolor="rgba(0,245,255,.10)",
-            line=dict(color="#00f5ff", width=2),
-            marker=dict(size=6, color="#00f5ff"),
-        ))
-        fig_radar.update_layout(
-            polar=dict(
-                bgcolor="rgba(8,8,24,.7)",
-                radialaxis=dict(visible=True, range=[0, 1],
-                    gridcolor="rgba(255,255,255,.06)",
-                    tickfont=dict(size=7, color="#6e7681")),
-                angularaxis=dict(
-                    gridcolor="rgba(255,255,255,.06)",
-                    tickfont=dict(size=9, color="#c9d1d9")),
-            ),
-            paper_bgcolor="rgba(0,0,0,0)",
-            showlegend=False,
-            margin=dict(l=40, r=40, t=30, b=30),
-            height=300,
-            title=dict(text="Capability Radar", font=dict(size=10, color="#8b949e")),
-        )
-        st.plotly_chart(fig_radar, use_container_width=True, key="cht_radar_cap")
-
-    st.markdown("---")
-
-    # ── Diagnostics ──────────────────────────────────────────────────
-    st.markdown('<div class="panel-header">🩺 SYSTEM DIAGNOSTICS</div>',
-                unsafe_allow_html=True)
-
-    checks = [
-        ("Buffer filled",       len(ss.brain.memory) >= ss.brain.batch_size,
-         f"{len(ss.brain.memory):,} / {ss.brain.batch_size}"),
-        ("Learning started",    ss.brain.train_step > 0,
-         f"{ss.brain.train_step:,} steps"),
-        ("Epsilon below 0.5",   ss.brain.epsilon < 0.5,
-         f"ε={ss.brain.epsilon:.4f}"),
-        ("Non-zero success",    ss.analytics.tracker.success_rate > 0,
-         f"{ss.analytics.tracker.success_rate*100:.1f}%"),
-        ("Positive avg reward", ss.analytics.tracker.avg_reward > 0,
-         f"{ss.analytics.tracker.avg_reward:+.3f}"),
-        ("Not regressing",      conv_state != "regressing",
-         conv_state),
-        ("Level > 1",           ss.brain.curriculum.level > 1,
-         f"L{ss.brain.curriculum.level}"),
-        ("LR not bottomed",     ss.brain.learning_rate > 1e-5,
-         f"{ss.brain.learning_rate:.7f}"),
-    ]
-
-    dc1, dc2 = st.columns(2)
-    for i, (name, ok, detail) in enumerate(checks):
-        col = dc1 if i % 2 == 0 else dc2
-        icon  = "✅" if ok  else "⚠️"
-        color = "#22c55e" if ok else "#f97316"
-        col.markdown(
-            f'<div style="display:flex;align-items:center;gap:8px;'
-            f'            margin:4px 0;font-size:.77rem;">'
-            f'  <span>{icon}</span>'
-            f'  <span style="color:#c9d1d9;">{name}</span>'
-            f'  <span style="margin-left:auto;color:{color};font-size:.68rem;">'
-            f'    {detail}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("---")
-
-    # ── Environment diagnostics ──────────────────────────────────────
-    st.markdown('<div class="panel-header">🌐 ENVIRONMENT DIAGNOSTICS</div>',
-                unsafe_allow_html=True)
-    env_st = ss.env.get_stats()
-    rd     = ss.env.get_render_data()
-
-    ed1, ed2, ed3, ed4 = st.columns(4)
-    ed1.metric("Maze Size",   f'{env_st["maze_h"]}×{env_st["maze_w"]}')
-    ed2.metric("Algorithm",   rd["algorithm"].upper())
-    ed3.metric("Total Cells", env_st["total_cells"])
-    ed4.metric("Passable",    int((ss.env.maze == 0).sum()))
-
-    ed5, ed6, ed7, ed8 = st.columns(4)
-    ed5.metric("Traps",       env_st["traps"])
-    ed6.metric("Portals",     len(rd["portals_a"]))
-    ed7.metric("Fog Active",  "Yes" if rd["use_fog"] else "No")
-    ed8.metric("Exploration", f'{cov*100:.1f}%')
-
-    st.markdown("---")
-
-    # ── Session export ───────────────────────────────────────────────
-    st.markdown('<div class="panel-header">📤 SESSION EXPORT</div>',
-                unsafe_allow_html=True)
-    ex1, ex2 = st.columns(2)
-
-    with ex1:
-        st.markdown("**Full Session Report**")
-        st.code(ss.analytics.get_session_report(), language=None)
-
-    with ex2:
-        st.markdown("**JSON Data Preview**")
-        json_str = ss.analytics.export_json()
-        st.code(json_str[:2000] + ("\n...[truncated]" if len(json_str) > 2000 else ""),
-                language="json")
-
-    zb = _export_zip()
-    if zb:
-        st.download_button(
-            "⬇️ Download Full ZIP Checkpoint",
-            data=zb,
-            file_name=f"ALIVE_NEXUS_ep{ss.episode_count}_L{ss.brain.curriculum.level}.zip",
-            mime="application/zip",
-            use_container_width=True,
-        )
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# MAIN APPLICATION
-# ═════════════════════════════════════════════════════════════════════════════
-def _main():
-    ss = st.session_state
-
-    # ── Global header ────────────────────────────────────────────────
-    h1, h2, h3 = st.columns([4, 3, 2])
-    with h1:
-        st.markdown(
-            '<div class="nexus-title">🧬 A.L.I.V.E. NEXUS</div>'
-            '<div style="font-size:.68rem;color:#6e7681;letter-spacing:.06em;margin-top:2px;">'
-            '  Adaptive Learning Intelligence &amp; Virtual Evolution</div>',
-            unsafe_allow_html=True,
-        )
-    with h2:
-        live = ss.analytics.get_live_stats()
-        soul_s = ss.soul.get_status()
-        st.markdown(
-            f'<div style="text-align:center;font-size:.72rem;line-height:2.0;padding-top:6px;">'
-            f'  <span class="badge badge-c">EP {ss.episode_count}</span>'
-            f'  <span class="badge badge-g">✓ {live["success_rate"]:.1f}%</span>'
-            f'  <span class="badge badge-p">L{ss.brain.curriculum.level}</span>'
-            f'  <span class="badge badge-o">ε {ss.brain.epsilon:.4f}</span>'
-            f'  <span style="font-size:1.1rem;">{soul_s["mood_emoji"]}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-    with h3:
-        auto_label = "⏸ PAUSE" if ss.auto_mode else "▶ AUTO RUN"
-        if st.button(auto_label, use_container_width=True, key="hdr_toggle"):
-            ss.auto_mode = not ss.auto_mode
-        if st.button("⏭ STEP ×1", use_container_width=True, key="hdr_step"):
-            process_step()
-            st.rerun()
-
-    st.markdown("---")
-
-    # ── Backend error banner ─────────────────────────────────────────
-    if not _PLOTLY:
-        st.warning("⚠️ Plotly not found — charts disabled. `pip install plotly`")
-
-    # ── Sidebar ──────────────────────────────────────────────────────
+def main():
     _sidebar()
 
-    # ── Tabs ─────────────────────────────────────────────────────────
-    tabs = st.tabs([
-        "🗺️ Mission Control",
-        "📊 Analytics Lab",
-        "🧠 Soul Matrix",
-        "🗄️ Memory Palace",
-        "🔬 Brain Autopsy",
-        "📅 Episode Timeline",
-        "🏆 Benchmark",
+    st.markdown('<div class="nexus-title">A.L.I.V.E. NEXUS v3.0</div>',
+                unsafe_allow_html=True)
+
+    t1, t2, t3, t4, t5 = st.tabs([
+        "🛸 MISSION CONTROL",
+        "📊 ANALYTICS LAB",
+        "🌌 SOUL MATRIX",
+        "🏛️ MEMORY PALACE",
+        "🧠 BRAIN AUTOPSY"
     ])
 
-    with tabs[0]:
-        _tab_mission()
-    with tabs[1]:
-        _tab_analytics()
-    with tabs[2]:
-        _tab_soul()
-    with tabs[3]:
-        _tab_memory()
-    with tabs[4]:
-        _tab_brain()
-    with tabs[5]:
-        _tab_timeline()
-    with tabs[6]:
-        _tab_benchmark()
+    with t1: _tab_mission()
+    with t2: _tab_analytics()
+    with t3: _tab_soul()
+    with t4: _tab_memory()
+    with t5: _tab_brain()
 
-    # ── Auto-run loop ────────────────────────────────────────────────
-    if ss.auto_mode:
-        spf = ss.config.get("steps_per_frame", 1)
-        for _ in range(spf):
+    # Continuous Execution Engine (RL Training Loop)
+    if st.session_state.auto_mode:
+        time.sleep(st.session_state.config.get("sim_speed", 0.04))
+        for _ in range(st.session_state.config.get("steps_per_frame", 1)):
             process_step()
-        delay = ss.config.get("sim_speed", 0.04)
-        if delay > 0:
-            time.sleep(delay)
         st.rerun()
 
-
-# ═════════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
-# ═════════════════════════════════════════════════════════════════════════════
-_main()
+if __name__ == "__main__":
+    main()
