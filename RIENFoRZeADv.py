@@ -1362,10 +1362,20 @@ def _tab_memory():
 
     with mc2:
         # Semantic knowledge
+        # Semantic knowledge
         st.markdown('<div class="panel-header">📖 SEMANTIC KNOWLEDGE</div>',
                     unsafe_allow_html=True)
         sem_sum = mem_st.get("semantic_summary", {})
-        if sem_sum:
+        
+        # Defensively handle cases where the backend returns a string instead of a dict
+        if isinstance(sem_sum, str):
+            try:
+                sem_sum = json.loads(sem_sum)
+            except Exception:
+                sem_sum = {}
+
+        # Safely extract metrics only if we have a valid dictionary
+        if isinstance(sem_sum, dict) and sem_sum:
             total = sem_sum.get("total_facts", 0)
             hi    = sem_sum.get("high_confidence_count", 0)
             st.markdown(
@@ -1375,6 +1385,7 @@ def _tab_memory():
                 f'</div>',
                 unsafe_allow_html=True,
             )
+          
         for fact in mem_st.get("semantic_facts",[])[:10]:
             conf = float(fact.get("confidence", 0))
             cc   = "#22c55e" if conf > 0.7 else ("#f97316" if conf > 0.4 else "#ef4444")
