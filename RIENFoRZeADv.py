@@ -184,7 +184,6 @@ div[data-testid="stMetricValue"]{font-family:'JetBrains Mono',monospace;color:#0
 pre code{font-size:.69rem!important;}
 section[data-testid="stSidebar"]{background:rgba(8,8,24,.97);
  border-right:1px solid rgba(0,245,255,.08);}
-#MainMenu,footer,header{visibility:hidden;}
 div[data-testid="stDecoration"]{display:none;}
 </style>""", unsafe_allow_html=True)
 
