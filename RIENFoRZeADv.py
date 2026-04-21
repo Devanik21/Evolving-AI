@@ -7,7 +7,7 @@ Project: The Event Horizon
 SCIENTIFIC INSTRUMENTATION  (new in v4.0)
   ✦ Live Q(s,a) vector bar-chart — real-time policy readout
   ✦ Policy entropy H(π) timeline — quantifies exploration
-  ✦ Reward decomposition: intrinsic (ICM) vs extrinsic  
+  ✦ Reward decomposition: intrinsic (ICM) vs extrinsic
   ✦ V(s) / max-Advantage streaming — dueling head analysis
   ✦ Gradient-norm proxy tracker — training stability signal
   ✦ Agent trajectory trail inside maze ASCII render
@@ -1484,25 +1484,31 @@ def _tab_visualizations():
     n = ss.config.get("chart_points", 150)
     cd = ss.analytics.get_chart_data(n)
     
-    # Altair Heatmap Helper
-    def _draw_heat(heat_array, cmap, title):
+    # Altair Heatmap Helper (Dark Aesthetic)
+    def _draw_heat(heat_array, target_color, title):
         st.markdown(f"**{title}**")
         df = pd.DataFrame(heat_array).melt(ignore_index=False).reset_index()
         df.columns = ["y", "x", "val"]
-        c = alt.Chart(df).mark_rect().encode(
+        c = alt.Chart(df).mark_rect(stroke=None).encode(
             x=alt.X("x:O", axis=None),
             y=alt.Y("y:O", axis=None),
-            color=alt.Color("val:Q", scale=alt.Scale(scheme=cmap), legend=None),
+            color=alt.Color("val:Q", 
+                            scale=alt.Scale(range=["#06060a", target_color]), 
+                            legend=None),
             tooltip=["x", "y", "val"]
-        ).properties(height=240)
-        st.altair_chart(c, width='stretch')
+        ).properties(height=240).configure(
+            background='transparent'
+        ).configure_view(
+            strokeOpacity=0
+        )
+        st.altair_chart(c, width='stretch', theme=None)
 
     C_RED, C_GRN, C_BLU, C_PUR, C_ORG, C_CYN, C_YLW = "#ff007f", "#00f5ff", "#38bdf8", "#a855f7", "#d946ef", "#06b6d4", "#c084fc"
 
     r1a, r1b, r1c = st.columns(3)
     H, W = ss.env.maze.shape
-    with r1a: _draw_heat(ss.analytics.get_heatmap(H,W, episode=False), "purplebluegreen", "1. Macro-Exploration Heatmap")
-    with r1b: _draw_heat(ss.analytics.get_heatmap(H,W, episode=True), "bluepurple", "2. Micro-Exploration Heatmap")
+    with r1a: _draw_heat(ss.analytics.get_heatmap(H,W, episode=False), "#06b6d4", "1. Macro-Exploration Heatmap")
+    with r1b: _draw_heat(ss.analytics.get_heatmap(H,W, episode=True), "#ff007f", "2. Micro-Exploration Heatmap")
     with r1c:
         st.markdown("**3. Action Preference Matrix**")
         st.bar_chart(pd.DataFrame({"Frequency": [c/(sum(ss.action_counts)+1) for c in ss.action_counts]}, index=ACTIONS), color=C_PUR, height=270, width='stretch')
