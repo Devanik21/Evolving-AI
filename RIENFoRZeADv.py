@@ -200,7 +200,7 @@ def _show(key: str, builder_fn, **kwargs):
             _store_fig(key, builder_fn(**kwargs))
         fig = _get_fig(key)
         if fig:
-            st.plotly_chart(fig, use_container_width=True, key=f"plt_{key}")
+            st.plotly_chart(fig, width='stretch', key=f"plt_{key}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PLOTLY BUILDERS  (pure functions, no Streamlit calls)
@@ -430,13 +430,13 @@ def _sidebar():
                     unsafe_allow_html=True)
         st.markdown('<div class="ph">⚡ SIMULATION</div>', unsafe_allow_html=True)
         c1,c2=st.columns(2)
-        if c1.button("▶ RUN",  use_container_width=True): ss.auto_mode=True
-        if c2.button("⏸ PAUSE",use_container_width=True): ss.auto_mode=False
+        if c1.button("▶ RUN",  width='stretch'): ss.auto_mode=True
+        if c2.button("⏸ PAUSE",width='stretch'): ss.auto_mode=False
         c3,c4=st.columns(2)
-        if c3.button("⏭ STEP", use_container_width=True):
+        if c3.button("⏭ STEP", width='stretch'):
             for _ in range(cfg.get("steps_per_frame",1)): process_step()
             st.rerun()
-        if c4.button("🔄 RESET",use_container_width=True): reset_all(); st.rerun()
+        if c4.button("🔄 RESET",width='stretch'): reset_all(); st.rerun()
         cfg["sim_speed"]=st.slider("Delay (s)",0.0,0.5,cfg.get("sim_speed",0.03),0.01)
         cfg["steps_per_frame"]=st.select_slider("Steps/frame",[1,2,4,8,16,32],cfg.get("steps_per_frame",1))
         st.markdown('<div class="ph">🌐 ENVIRONMENT</div>', unsafe_allow_html=True)
@@ -462,12 +462,12 @@ def _sidebar():
             cfg["h3"]=st.select_slider("H3",[16,32,64,128],cfg.get("h3",64))
             cfg["buffer_size"]=st.select_slider("Buffer",[10_000,25_000,50_000,100_000],cfg.get("buffer_size",50_000))
         st.markdown('<div class="ph">💾 PERSISTENCE</div>', unsafe_allow_html=True)
-        if st.button("💾 Save",use_container_width=True):
+        if st.button("💾 Save",width='stretch'):
             st.toast("✅ Saved!" if _do_save() else "❌ Failed")
         zb=_export_zip()
-        if zb: st.download_button("⬇️ Export ZIP",zb,f"alive_ep{ss.episode_count}.zip","application/zip",use_container_width=True)
+        if zb: st.download_button("⬇️ Export ZIP",zb,f"alive_ep{ss.episode_count}.zip","application/zip",width='stretch')
         up=st.file_uploader("📂 Load ZIP",type="zip",label_visibility="collapsed")
-        if up and st.button("Restore",use_container_width=True):
+        if up and st.button("Restore",width='stretch'):
             if _load_zip(up): st.toast("✅ Restored!"); st.rerun()
         st.markdown('<div class="ph">👤 SOUL</div>', unsafe_allow_html=True)
         nn=st.text_input("Your Name",value=ss.soul.user_name,label_visibility="collapsed")
@@ -666,7 +666,7 @@ def _tab_soul():
         st.markdown("**Quick Prompts**")
         qc=st.columns(4)
         for col,p in zip(qc,["Hello!","How do you feel?","What are you?","Am I your friend?"]):
-            if col.button(p,use_container_width=True,key=f"qp_{p}"): ss.soul.chat(p); st.rerun()
+            if col.button(p,width='stretch',key=f"qp_{p}"): ss.soul.chat(p); st.rerun()
 
     with right:
         st.markdown("### 🌀 Identity Core")
@@ -708,7 +708,7 @@ def _tab_memory():
             df=pd.DataFrame(rec)[["episode_id","curriculum_level","total_reward","success","total_steps","efficiency","maze_alg"]]
             df.columns=["EP#","LVL","REWARD","WIN","STEPS","EFFIC","ALG"]
             df["WIN"]=df["WIN"].map({True:"✅",False:"❌"})
-            st.dataframe(df.tail(10),use_container_width=True,hide_index=True)
+            st.dataframe(df.tail(10),width='stretch',hide_index=True)
         st.markdown('<div class="ph">🌟 LANDMARKS</div>', unsafe_allow_html=True)
         for lm in fs.get("landmark_episodes",[])[:4]:
             cls="ep-success" if lm["success"] else "ep-fail"
@@ -723,7 +723,7 @@ def _tab_memory():
         if facts:
             fdf=pd.DataFrame(facts)[["key","value","confidence","source"]].head(14)
             fdf.columns=["FACT","VALUE","CONF","SOURCE"]
-            st.dataframe(fdf,use_container_width=True,hide_index=True)
+            st.dataframe(fdf,width='stretch',hide_index=True)
         else: st.info("Semantic memory empty. Play more episodes.")
         st.markdown('<div class="ph">💡 INSIGHTS</div>', unsafe_allow_html=True)
         for ins in fs.get("insights",[]): st.markdown(f"• {ins}")
@@ -736,8 +736,8 @@ def _tab_memory():
                     unsafe_allow_html=True)
         st.text(ss.analytics.get_session_report())
         zb=_export_zip()
-        if zb: st.download_button("⬇️ Full ZIP Export",zb,f"alive_ep{ss.episode_count}.zip","application/zip",use_container_width=True)
-        if st.button("🗑 Clear Episodic Memory",use_container_width=True):
+        if zb: st.download_button("⬇️ Full ZIP Export",zb,f"alive_ep{ss.episode_count}.zip","application/zip",width='stretch')
+        if st.button("🗑 Clear Episodic Memory",width='stretch'):
             ss.memory.episodic.episodes.clear(); ss.memory.semantic.facts.clear()
             st.toast("Memory cleared."); st.rerun()
 
@@ -837,7 +837,7 @@ def _tab_timeline():
     disp["success"]=disp["success"].map({True:"✅",False:"❌"})
     disp["efficiency"]=disp["efficiency"].apply(lambda x:f"{x:.2%}")
     disp.columns=["EP#","LVL","REWARD","WIN","STEPS","EFFIC","ALG","TAGS"]
-    st.dataframe(disp, use_container_width=True, hide_index=True)
+    st.dataframe(disp, width='stretch', hide_index=True)
     st.markdown("---")
     # timeline charts (cached)
     xs=list(df["episode_id"])
@@ -927,7 +927,7 @@ def _tab_benchmark():
         st.code(j[:1500]+("\n...[truncated]" if len(j)>1500 else ""), language="json")
     zb=_export_zip()
     if zb: st.download_button("⬇️ Full ZIP Checkpoint",zb,
-        f"ALIVE_ep{ss.episode_count}_L{ss.brain.curriculum.level}.zip","application/zip",use_container_width=True)
+        f"ALIVE_ep{ss.episode_count}_L{ss.brain.curriculum.level}.zip","application/zip",width='stretch')
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN
@@ -951,9 +951,9 @@ def _main():
                     f'</div>', unsafe_allow_html=True)
     with h3:
         lbl="⏸ PAUSE" if ss.auto_mode else "▶ AUTO RUN"
-        if st.button(lbl, use_container_width=True, key="hdr_toggle"):
+        if st.button(lbl, width='stretch', key="hdr_toggle"):
             ss.auto_mode = not ss.auto_mode
-        if st.button("⏭ STEP ×1", use_container_width=True, key="hdr_step"):
+        if st.button("⏭ STEP ×1", width='stretch', key="hdr_step"):
             process_step(); st.rerun()
     st.markdown("---")
 
