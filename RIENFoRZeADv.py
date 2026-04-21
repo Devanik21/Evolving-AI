@@ -129,7 +129,7 @@ div[data-testid="stMetricValue"]{font-family:'JetBrains Mono',monospace;color:#0
 .stCode,.stCodeBlock{background:#0a0a18!important;border:1px solid rgba(0,245,255,.11)!important;
     border-radius:7px!important;font-size:.68rem!important;line-height:1.1!important;}
 section[data-testid="stSidebar"]{background:rgba(8,8,24,.98);border-right:1px solid rgba(0,245,255,.07);}
-#MainMenu,footer,header{visibility:hidden;}
+
 div[data-testid="stDecoration"]{display:none;}
 </style>""", unsafe_allow_html=True)
 
