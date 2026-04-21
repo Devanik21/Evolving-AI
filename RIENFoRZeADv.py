@@ -36,7 +36,7 @@ from typing import Dict, List, Optional, Tuple
 
 # ── Backend ────────────────────────────────────────────────
 try:
-    from world         import MazeEnvironment
+    from world         import MazeEnvironment, WALL, PATH
     from brain         import AgentBrain
     from soul          import SoulCore
     from memory_palace import MemoryPalace
@@ -306,7 +306,7 @@ def _init():
     ss.last_ep_reward  = 0.0
     ss.last_ep_success = False
 
-if "brain" not in st.session_state:
+if "brain" not in st.session_state or "entropy_hist" not in st.session_state:
     _init()
 
 # ── Simulation core ────────────────────────────────────────
@@ -518,7 +518,7 @@ def _telemetry_strip():
     ss   = st.session_state
     br   = ss.brain; an = ss.analytics
     live = an.get_live_stats(); sl = ss.soul.get_status()
-    ent  = list(ss.entropy_hist)[-1] if ss.entropy_hist else 0.0
+    ent  = list(ss.get("entropy_hist", []))[-1] if ss.get("entropy_hist") else 0.0
     cap  = ss.capability
 
     def _d(v, ref=0, fmt=".2f"):
