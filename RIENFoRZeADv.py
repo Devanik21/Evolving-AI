@@ -557,13 +557,13 @@ def _sidebar():
 
         st.markdown('<div class="ph">⚡ SIMULATION</div>', unsafe_allow_html=True)
         r1,r2 = st.columns(2)
-        if r1.button("▶ RUN",   use_container_width=True): ss.auto_mode = True
-        if r2.button("⏸ PAUSE", use_container_width=True): ss.auto_mode = False
+        if r1.button("▶ RUN",   width='stretch'): ss.auto_mode = True
+        if r2.button("⏸ PAUSE", width='stretch'): ss.auto_mode = False
         r3,r4 = st.columns(2)
-        if r3.button("⏭ STEP",  use_container_width=True):
+        if r3.button("⏭ STEP",  width='stretch'):
             for _ in range(cfg.get("steps_per_frame",1)): process_step()
             st.rerun()
-        if r4.button("🔄 RESET", use_container_width=True): reset_all(); st.rerun()
+        if r4.button("🔄 RESET", width='stretch'): reset_all(); st.rerun()
         cfg["sim_speed"]       = st.slider("Delay (s)", 0.0, 0.5, cfg.get("sim_speed",0.04), 0.01)
         cfg["steps_per_frame"] = st.select_slider("Steps/frame",[1,2,4,8,16,32],
                                                     cfg.get("steps_per_frame",1))
@@ -595,16 +595,16 @@ def _sidebar():
                                                     cfg["buffer_size"])
 
         st.markdown('<div class="ph">💾 PERSISTENCE</div>', unsafe_allow_html=True)
-        if st.button("💾 Save Checkpoint", use_container_width=True):
+        if st.button("💾 Save Checkpoint", width='stretch'):
             st.toast("✅ Saved!" if _do_save() else "❌ Failed")
-        if st.button("⬇️ Build & Export ZIP", use_container_width=True):
+        if st.button("⬇️ Build & Export ZIP", width='stretch'):
             zb = _make_zip()
             if zb:
                 st.download_button("⬇️ Download",data=zb,
                     file_name=f"ALIVE_v4_ep{ss.episode_count}_L{ss.brain.curriculum.level}.zip",
-                    mime="application/zip",use_container_width=True,key="_sdl")
+                    mime="application/zip",width='stretch',key="_sdl")
         up = st.file_uploader("📂 Load ZIP",type="zip",label_visibility="collapsed")
-        if up and st.button("Restore",use_container_width=True):
+        if up and st.button("Restore",width='stretch'):
             if _load_zip(up): st.toast("✅ Restored!"); st.rerun()
 
         st.markdown('<div class="ph">👤 SOUL / DISPLAY</div>', unsafe_allow_html=True)
@@ -648,8 +648,8 @@ def _header():
             f'</div>', unsafe_allow_html=True)
     with h3:
         lbl = "⏸ PAUSE" if ss.auto_mode else "▶ AUTO RUN"
-        if st.button(lbl,use_container_width=True,key="htog"): ss.auto_mode=not ss.auto_mode
-        if st.button("⏭ STEP ×1",use_container_width=True,key="hstp"):
+        if st.button(lbl,width='stretch',key="htog"): ss.auto_mode=not ss.auto_mode
+        if st.button("⏭ STEP ×1",width='stretch',key="hstp"):
             process_step(); st.rerun()
     st.markdown("---")
     _telemetry_strip()
@@ -701,7 +701,7 @@ def _tab_mission():
             prb = _softmax(qv); best = int(np.argmax(qv))
             q_df = pd.DataFrame({"Q-Value": qv, "Prob": prb},
                                  index=ACTIONS)
-            st.bar_chart(q_df[["Q-Value"]], height=120, use_container_width=True)
+            st.bar_chart(q_df[["Q-Value"]], height=120, width='stretch')
             row = ""
             for i,(a,p) in enumerate(zip(ACTIONS, prb)):
                 hi = "font-weight:700;" if i==best else ""
@@ -740,7 +740,7 @@ def _tab_mission():
         st.markdown('<div class="ph">📐 POLICY ENTROPY H(π)</div>', unsafe_allow_html=True)
         if len(ss.entropy_hist) > 3:
             ent_df = pd.DataFrame({"H(π)": list(ss.entropy_hist)[-150:]})
-            st.line_chart(ent_df, height=110, use_container_width=True)
+            st.line_chart(ent_df, height=110, width='stretch')
             cur_ent = list(ss.entropy_hist)[-1]
             max_ent = math.log(ACTION_SIZE)
             st.caption(f"H(π)={cur_ent:.3f} nats  |  H_max={max_ent:.3f}  "
@@ -767,14 +767,14 @@ def _tab_mission():
         if cd.get("rewards"):
             df = _cdf(cd,["ema_rewards","rewards"],n); df.columns = ["EMA","Raw"]
             st.markdown("**Reward History**")
-            st.line_chart(df,height=150,use_container_width=True)
+            st.line_chart(df,height=150,width='stretch')
     with cc2:
         if ss.intr_hist and ss.extr_hist:
             ni = min(len(ss.intr_hist),len(ss.extr_hist),n)
             df = pd.DataFrame({"Intrinsic":list(ss.intr_hist)[-ni:],
                                 "Extrinsic":list(ss.extr_hist)[-ni:]})
             st.markdown("**Reward Decomposition: ICM vs Extrinsic**")
-            st.line_chart(df,height=150,use_container_width=True)
+            st.line_chart(df,height=150,width='stretch')
 
 # ══════════════════════════════════════════════════════════
 # TAB 2 — ANALYTICS LAB
@@ -797,27 +797,27 @@ def _tab_analytics():
     with ca:
         if cd.get("rewards"):
             df = _cdf(cd,["ema_rewards","rewards"],n); df.columns=["EMA","Raw"]
-            st.markdown("**Reward History**"); st.line_chart(df,height=170,use_container_width=True)
+            st.markdown("**Reward History**"); st.line_chart(df,height=170,width='stretch')
         if cd.get("losses"):
             df = pd.DataFrame({"Loss":list(cd["losses"])[-n*3:]})
-            st.markdown("**Training Loss**"); st.line_chart(df,height=150,use_container_width=True)
+            st.markdown("**Training Loss**"); st.line_chart(df,height=150,width='stretch')
         if cd.get("successes"):
             succ = list(cd["successes"])[-n:]; wn = min(20,len(succ))
             roll = [sum(succ[max(0,i-wn):i+1])/min(i+1,wn) for i in range(len(succ))]
             st.markdown(f"**Rolling Win Rate (w={wn})**")
-            st.line_chart(pd.DataFrame({"Win Rate":roll}),height=140,use_container_width=True)
+            st.line_chart(pd.DataFrame({"Win Rate":roll}),height=140,width='stretch')
     with cb:
         if ss.bellman_hist:
             df = pd.DataFrame({"Bellman Residual":list(ss.bellman_hist)[-n*3:]})
             st.markdown("**Bellman Residual |r+γQ'−Q|**")
-            st.line_chart(df,height=170,use_container_width=True)
+            st.line_chart(df,height=170,width='stretch')
         if cd.get("steps"):
             df = _cdf(cd,["steps"],n); df.columns=["Steps/Ep"]
-            st.markdown("**Steps per Episode**"); st.line_chart(df,height=150,use_container_width=True)
+            st.markdown("**Steps per Episode**"); st.line_chart(df,height=150,width='stretch')
         if cd.get("optimality"):
             df = _cdf(cd,["optimality"],n); df.columns=["Path Efficiency"]
             st.markdown("**Path Efficiency vs A***")
-            st.line_chart(df,height=140,use_container_width=True)
+            st.line_chart(df,height=140,width='stretch')
 
     st.markdown("---")
     da,db = st.columns(2)
@@ -827,13 +827,13 @@ def _tab_analytics():
             n2 = min(len(ss.val_hist),len(ss.adv_hist),n)
             df = pd.DataFrame({"V(s)":list(ss.val_hist)[-n2:],
                                 "max A(s,a)":list(ss.adv_hist)[-n2:]})
-            st.line_chart(df,height=160,use_container_width=True)
+            st.line_chart(df,height=160,width='stretch')
             st.caption("V(s): state value stream. max A(s,a): best-action advantage.")
     with db:
         st.markdown('<div class="ph">⚡ GRADIENT NORM (‖ΔW₁‖_F)</div>', unsafe_allow_html=True)
         if ss.gnorm_hist:
             df = pd.DataFrame({"Grad Norm":list(ss.gnorm_hist)[-n*3:]})
-            st.line_chart(df,height=160,use_container_width=True)
+            st.line_chart(df,height=160,width='stretch')
             st.caption("Frobenius norm of weight update for H1. Spikes = large updates.")
 
     st.markdown("---")
@@ -860,7 +860,7 @@ def _tab_analytics():
         df = pd.DataFrame({"Score":scores,
                             "Promote":[cur.promote_thresh]*len(scores),
                             "Demote":[cur.demote_thresh]*len(scores)})
-        st.line_chart(df,height=160,use_container_width=True)
+        st.line_chart(df,height=160,width='stretch')
         cc1,cc2,cc3 = st.columns(3)
         cc1.metric("Promotions",cur.promotions)
         cc2.metric("Demotions", cur.demotions)
@@ -889,7 +889,7 @@ def _tab_soul():
         # Circumplex proxy bar chart
         va_df = pd.DataFrame({"Value":[max(v,0),max(-v,0),max(a,0),max(-a,0)]},
                               index=["Valence+","Valence−","Arousal+","Arousal−"])
-        st.bar_chart(va_df,height=110,use_container_width=True)
+        st.bar_chart(va_df,height=110,width='stretch')
 
         st.markdown(
             f'<div style="margin-top:6px;"><b style="color:#00f5ff;">{sl["stage"]}</b><br>'
@@ -902,7 +902,7 @@ def _tab_soul():
         ocean = pd.DataFrame({"Score":[sl["O"],sl["C"],sl["E"],sl["A"],sl["N"]]},
                               index=["Openness","Conscientiousness","Extraversion",
                                      "Agreeableness","Neuroticism"])
-        st.bar_chart(ocean,height=155,use_container_width=True)
+        st.bar_chart(ocean,height=155,width='stretch')
         st.caption(f"Active traits: {sl['personality']}")
 
         # Action preference
@@ -912,7 +912,7 @@ def _tab_soul():
         act_df = pd.DataFrame(
             {"Frequency":[c/total_a for c in ss.action_counts]},
             index=ACTIONS)
-        st.bar_chart(act_df,height=110,use_container_width=True)
+        st.bar_chart(act_df,height=110,width='stretch')
         dom = ACTIONS[int(np.argmax(ss.action_counts))]
         st.caption(f"Dominant action: **{dom}** ({max(ss.action_counts)/total_a*100:.1f}%)")
 
@@ -943,7 +943,7 @@ def _tab_soul():
 
         qp = st.columns(4)
         for col,p in zip(qp,["Hello!","How do you feel?","Are you conscious?","Tell me what you learned."]):
-            if col.button(p,use_container_width=True,key=f"qp_{p[:3]}"): ss.soul.chat(p); st.rerun()
+            if col.button(p,width='stretch',key=f"qp_{p[:3]}"): ss.soul.chat(p); st.rerun()
 
         # Full consciousness log
         st.markdown("---")
@@ -989,7 +989,7 @@ def _tab_memory():
                    "STEPS":e.get("total_steps",""),
                    "EFF":f'{e.get("efficiency",0)*100:.0f}%',
                    "ALG":e.get("maze_alg","")} for e in recent]
-            st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+            st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
 
         # Episode comparison: best vs worst
         if ss.best_ep and ss.worst_ep:
@@ -1001,7 +1001,7 @@ def _tab_memory():
                 "Worst": [ss.worst_ep["reward"], ss.worst_ep["steps"],
                           ss.worst_ep["efficiency"],ss.worst_ep["level"]],
             }, index=["Reward","Steps","Efficiency","Level"])
-            st.dataframe(cmp_df,use_container_width=True)
+            st.dataframe(cmp_df,width='stretch')
 
         st.markdown("**🌟 Landmarks**")
         for lm in fs.get("landmark_episodes",[])[:4]:
@@ -1019,7 +1019,7 @@ def _tab_memory():
         if facts:
             rows=[{"FACT":f["key"][:38],"VAL":str(f["value"])[:18],
                    "CONF":f'{f["confidence"]:.0%}',"SRC":f["source"]} for f in facts[:12]]
-            st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+            st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
         else:
             st.info("No semantic facts yet. Play more episodes.")
 
@@ -1043,10 +1043,10 @@ def _tab_memory():
         st.markdown("**📊 Session Report**")
         st.code(ss.analytics.get_session_report(),language=None)
         c1,c2 = st.columns(2)
-        if c1.button("📋 Export JSON",use_container_width=True):
+        if c1.button("📋 Export JSON",width='stretch'):
             ex = ss.analytics.export_json()
             st.download_button("⬇️ Download",ex,"alive_session.json","application/json",key="_jdl")
-        if c2.button("🗑 Clear Memory",use_container_width=True):
+        if c2.button("🗑 Clear Memory",width='stretch'):
             ss.memory.episodic.episodes.clear(); ss.memory.semantic.facts.clear()
             st.toast("Memory cleared."); st.rerun()
 
@@ -1063,18 +1063,18 @@ def _tab_brain():
     with cb1:
         if cd.get("losses"):
             df = pd.DataFrame({"Loss":list(cd["losses"])[-n*3:]})
-            st.markdown("**Training Loss**"); st.line_chart(df,height=150,use_container_width=True)
+            st.markdown("**Training Loss**"); st.line_chart(df,height=150,width='stretch')
         if cd.get("td_errors"):
             df = pd.DataFrame({"TD-Error":list(cd["td_errors"])[-n*3:]})
-            st.markdown("**TD-Error**"); st.line_chart(df,height=140,use_container_width=True)
+            st.markdown("**TD-Error**"); st.line_chart(df,height=140,width='stretch')
         if ss.bellman_hist:
             df = pd.DataFrame({"Bellman Residual":list(ss.bellman_hist)[-n*3:]})
-            st.markdown("**Bellman Residual**"); st.line_chart(df,height=130,use_container_width=True)
+            st.markdown("**Bellman Residual**"); st.line_chart(df,height=130,width='stretch')
         st.markdown("**W1 Weight Distribution (first 32 neurons)**")
-        st.bar_chart(pd.DataFrame({"W1":bn.W1.flatten()[:32]}),height=100,use_container_width=True)
+        st.bar_chart(pd.DataFrame({"W1":bn.W1.flatten()[:32]}),height=100,width='stretch')
         st.markdown("**Advantage Bias b_adv per Action**")
         adv_df = pd.DataFrame({"Bias":bn.b_adv},index=ACTIONS)
-        st.bar_chart(adv_df,height=90,use_container_width=True)
+        st.bar_chart(adv_df,height=90,width='stretch')
 
     with cb2:
         tp = sum(bn.__dict__[p].size
@@ -1122,7 +1122,7 @@ def _tab_brain():
             "Component":["3×3 Vision","Agent r,c","Target r,c",
                          "Manhattan","Trap dist","Fog cov","Time"],
             "Dims":[9,2,2,1,1,1,1]
-        }),hide_index=True,use_container_width=True)
+        }),hide_index=True,width='stretch')
 
 # ══════════════════════════════════════════════════════════
 # TAB 6 — EPISODE TIMELINE
@@ -1146,11 +1146,11 @@ def _tab_timeline():
     st.markdown("**Reward & Success timeline**")
     tl_df = pd.DataFrame({"Reward":[e.total_reward for e in recent],
                            "Success×10":[10.0 if e.success else -10.0 for e in recent]})
-    st.line_chart(tl_df,height=170,use_container_width=True)
+    st.line_chart(tl_df,height=170,width='stretch')
 
     st.markdown("**Curriculum Level Progression**")
     lv_df = pd.DataFrame({"Level":[e.curriculum_level for e in recent]})
-    st.line_chart(lv_df,height=110,use_container_width=True)
+    st.line_chart(lv_df,height=110,width='stretch')
 
     # Episode log table
     st.markdown("**Episode Log (latest 30)**")
@@ -1160,7 +1160,7 @@ def _tab_timeline():
            "EFF%":f"{e.efficiency*100:.0f}","ε":f"{e.epsilon_end:.3f}",
            "FOG":"🌫" if e.fog_used else "","TRAP":"💀" if e.traps_used else ""}
           for e in list(reversed(recent))[:30]]
-    st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+    st.dataframe(pd.DataFrame(rows),hide_index=True,width='stretch')
 
     # Efficiency histogram
     st.markdown("**Efficiency Distribution (vs A* optimal)**")
@@ -1168,7 +1168,7 @@ def _tab_timeline():
     hist,_ = np.histogram(effs,bins=bins)
     hist_df = pd.DataFrame({"Count":hist},
                             index=[f"{bins[i]:.1f}–{bins[i+1]:.1f}" for i in range(len(hist))])
-    st.bar_chart(hist_df,height=130,use_container_width=True)
+    st.bar_chart(hist_df,height=130,width='stretch')
 
     # Steps distribution
     if len(recent) >= 5:
@@ -1178,7 +1178,7 @@ def _tab_timeline():
         shist,_ = np.histogram(step_vals,bins=sbins)
         shist_df = pd.DataFrame({"Count":shist},
                                  index=[f"{int(sbins[i])}–{int(sbins[i+1])}" for i in range(len(shist))])
-        st.bar_chart(shist_df,height=120,use_container_width=True)
+        st.bar_chart(shist_df,height=120,width='stretch')
 
 # ══════════════════════════════════════════════════════════
 # TAB 7 — BENCHMARK
@@ -1203,7 +1203,7 @@ def _tab_benchmark():
     comp_df = pd.DataFrame({"Score":[s_sc,o_sc,e_sc,cv_sc,lv_sc]},
                             index=["Success (40)","Efficiency (25)","Exploration (15)",
                                    "Convergence (10)","Curriculum (10)"])
-    st.bar_chart(comp_df,height=190,use_container_width=True)
+    st.bar_chart(comp_df,height=190,width='stretch')
     st.markdown(
         f'<div style="text-align:center;font-size:2.1rem;color:#00f5ff;'
         f'font-family:JetBrains Mono,monospace;font-weight:700;margin:8px 0;">'
@@ -1237,7 +1237,7 @@ def _tab_benchmark():
         df_h = pd.DataFrame({"Reward":rewards})
         trend_line = [rewards[0]+slope*i for i in range(len(rewards))]
         df_h["Trend"] = trend_line
-        st.line_chart(df_h,height=130,use_container_width=True)
+        st.line_chart(df_h,height=130,width='stretch')
     else:
         st.info("Need ≥6 episodes for hypothesis test. Run the simulation.")
 
@@ -1320,12 +1320,12 @@ def _tab_benchmark():
         st.markdown("**JSON Preview**")
         js = an.export_json()
         st.code(js[:1400]+("\n...[truncated]" if len(js)>1400 else ""),language="json")
-    if st.button("⬇️ Build & Download Full ZIP Checkpoint",use_container_width=True):
+    if st.button("⬇️ Build & Download Full ZIP Checkpoint",width='stretch'):
         zb = _make_zip()
         if zb:
             st.download_button("⬇️ Download ZIP",data=zb,
                 file_name=f"ALIVE_NEXUS_v4_ep{ss.episode_count}_L{br.curriculum.level}.zip",
-                mime="application/zip",use_container_width=True,key="_bzdl")
+                mime="application/zip",width='stretch',key="_bzdl")
 
 # ══════════════════════════════════════════════════════════
 # TAB 8 — RESEARCH LAB
@@ -1423,7 +1423,7 @@ in general — but empirically robust with Double DQN + target network.
         }
         st.dataframe(pd.DataFrame({"Value":[str(v) for v in params.values()]},
                                   index=params.keys()),
-                     use_container_width=True)
+                     width='stretch')
 
         st.markdown("---")
         st.markdown("### Key References")
