@@ -1467,12 +1467,12 @@ def _tab_visualizations():
     
     if not ss.get("_render_viz", False):
         st.info("🌌 The Hyper-Viz Matrix contains 24 high-resolution, color-mapped tensor streams. It is purely lazy-loaded to preserve the simulation tickrate.")
-        if st.button("🚀 IGNITE MATRIX (Mount Graphics)", width='stretch'):
+        if st.button("IGNITE MATRIX (Mount Graphics)", width='stretch'):
             ss._render_viz = True
             st.rerun()
         return
         
-    if st.button("🔌 UNMOUNT MATRIX", width='stretch'):
+    if st.button("UNMOUNT MATRIX", width='stretch'):
         ss._render_viz = False
         st.rerun()
 
@@ -1497,12 +1497,12 @@ def _tab_visualizations():
         ).properties(height=240)
         st.altair_chart(c, width='stretch')
 
-    C_RED, C_GRN, C_BLU, C_PUR, C_ORG, C_CYN, C_YLW = "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#f97316", "#00f5ff", "#eab308"
+    C_RED, C_GRN, C_BLU, C_PUR, C_ORG, C_CYN, C_YLW = "#ff007f", "#00f5ff", "#38bdf8", "#a855f7", "#d946ef", "#06b6d4", "#c084fc"
 
     r1a, r1b, r1c = st.columns(3)
     H, W = ss.env.maze.shape
-    with r1a: _draw_heat(ss.analytics.get_heatmap(H,W, episode=False), "inferno", "1. Macro-Exploration Heatmap")
-    with r1b: _draw_heat(ss.analytics.get_heatmap(H,W, episode=True), "viridis", "2. Micro-Exploration Heatmap")
+    with r1a: _draw_heat(ss.analytics.get_heatmap(H,W, episode=False), "purplebluegreen", "1. Macro-Exploration Heatmap")
+    with r1b: _draw_heat(ss.analytics.get_heatmap(H,W, episode=True), "bluepurple", "2. Micro-Exploration Heatmap")
     with r1c:
         st.markdown("**3. Action Preference Matrix**")
         st.bar_chart(pd.DataFrame({"Frequency": [c/(sum(ss.action_counts)+1) for c in ss.action_counts]}, index=ACTIONS), color=C_PUR, height=270, width='stretch')
