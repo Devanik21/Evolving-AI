@@ -705,7 +705,7 @@ def _tab_memory():
             m4.metric("Max Level",es.get("max_level_reached",1))
         rec=fs.get("episodic_recent",[])
         if rec:
-            df=pd.DataFrame(rec)[["episode_id","curriculum_level","total_reward","success","steps","efficiency","maze_alg"]]
+            df=pd.DataFrame(rec)[["episode_id","curriculum_level","total_reward","success","total_steps","efficiency","maze_alg"]]
             df.columns=["EP#","LVL","REWARD","WIN","STEPS","EFFIC","ALG"]
             df["WIN"]=df["WIN"].map({True:"✅",False:"❌"})
             st.dataframe(df.tail(10),use_container_width=True,hide_index=True)
@@ -832,7 +832,8 @@ def _tab_timeline():
     s3.metric("Avg efficiency",f'{df["efficiency"].mean():.2%}')
     s4.metric("Levels seen",f'{df["curriculum_level"].nunique()}')
     # episode table
-    disp=df[["episode_id","curriculum_level","total_reward","success","steps","efficiency","maze_alg","tags"]].copy()
+    # episode table
+    disp=df[["episode_id","curriculum_level","total_reward","success","total_steps","efficiency","maze_alg","tags"]].copy()
     disp["success"]=disp["success"].map({True:"✅",False:"❌"})
     disp["efficiency"]=disp["efficiency"].apply(lambda x:f"{x:.2%}")
     disp.columns=["EP#","LVL","REWARD","WIN","STEPS","EFFIC","ALG","TAGS"]
@@ -848,7 +849,7 @@ def _tab_timeline():
     with c1:
         _show("tl_steps",_build_lines,
               xs=xs,
-              traces=[{"y":list(df["steps"]),"name":"Steps","c":"#58a6ff","w":1.2}],
+              traces=[{"y":list(df["total_steps"]),"name":"Steps","c":"#58a6ff","w":1.2}],
               title="Steps per Episode",height=180)
     with c2:
         _show("tl_eff",_build_lines,
