@@ -907,7 +907,7 @@ def _tab_benchmark():
     st.markdown('<div class="ph">🌐 ENVIRONMENT DIAGNOSTICS</div>', unsafe_allow_html=True)
     es=ss.env.get_stats(); rd=ss.env.get_render_data()
     e1,e2,e3,e4=st.columns(4)
-    e1.metric("Maze Size",f'{es["maze_h"]}×{es["maze_w"]}')
+    e1.metric("Maze Size", es["maze_size"])
     e2.metric("Algorithm",rd["algorithm"].upper())
     e3.metric("Passable Cells",int((ss.env.maze==0).sum()))
     e4.metric("A* Optimal",es["astar_optimal"])
