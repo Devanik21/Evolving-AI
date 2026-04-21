@@ -1283,10 +1283,10 @@ def _tab_benchmark():
         ("LR viable",           br.learning_rate>1e-5,            f"{br.learning_rate:.6f}"),
         ("Episodic memory OK",  len(ss.memory.episodic.episodes)>0,f"{len(ss.memory.episodic.episodes)} eps"),
         ("Curiosity active",    br.curiosity.coverage()>10,       f"{br.curiosity.coverage()} states"),
-        ("Bellman stable",      (not ss.bellman_hist or list(ss.bellman_hist)[-1]<20.0),
-                                f"{list(ss.bellman_hist)[-1]:.2f}" if ss.bellman_hist else "n/a"),
-        ("Entropy in range",    (not ss.entropy_hist or 0.1<list(ss.entropy_hist)[-1]<math.log(4)+0.1),
-                                f"{list(ss.entropy_hist)[-1]:.3f}" if ss.entropy_hist else "n/a"),
+        ("Bellman stable",      (not ss.get("bellman_hist") or list(ss.get("bellman_hist", []))[-1]<20.0),
+                                f"{list(ss.get('bellman_hist', []))[-1]:.2f}" if ss.get("bellman_hist") else "n/a"),
+        ("Entropy in range",    (not ss.get("entropy_hist") or 0.1<list(ss.get("entropy_hist", []))[-1]<math.log(4)+0.1),
+                                f"{list(ss.get('entropy_hist', []))[-1]:.3f}" if ss.get("entropy_hist") else "n/a"),
     ]
     dc1,dc2 = st.columns(2)
     for i,(name,ok,detail) in enumerate(diag):
@@ -1358,10 +1358,10 @@ def _tab_research():
 
         st.markdown("### Adam Optimiser (Kingma & Ba, 2014)")
         st.markdown("""<div class="eq">
-<em>m_t = β₁ m_{t-1} + (1−β₁) g_t</em><br>
-<em>v_t = β₂ v_{t-1} + (1−β₂) g_t²</em><br>
+<em>m_t = β₁ m_{{t-1}} + (1−β₁) g_t</em><br>
+<em>v_t = β₂ v_{{t-1}} + (1−β₂) g_t²</em><br>
 <em>m̂_t = m_t/(1−β₁ᵗ) &nbsp;&nbsp; v̂_t = v_t/(1−β₂ᵗ)</em><br>
-<em>θ_t = θ_{t-1} − α · m̂_t / (√v̂_t + ε)</em><br><br>
+<em>θ_t = θ_{{t-1}} − α · m̂_t / (√v̂_t + ε)</em><br><br>
 <u>Hypers</u>: β₁=0.9  β₂=0.999  ε=1×10⁻⁸  α=<b>{lr:.4f}</b>
 </div>""".format(lr=cfg["lr"]), unsafe_allow_html=True)
 
@@ -1384,8 +1384,8 @@ H=log|A|=<b>{:.3f}</b> nats → uniform (max exploration)<br><br>
 <u>Current H(π)</u>: <b>{:.3f}</b> nats &nbsp;→&nbsp;
 Exploitation ratio: <b>{:.0f}%</b>
 </div>""".format(math.log(ACTION_SIZE),
-                 list(ss.entropy_hist)[-1] if ss.entropy_hist else 0.0,
-                 (1-(list(ss.entropy_hist)[-1]/math.log(ACTION_SIZE)) if ss.entropy_hist else 0)*100),
+                 list(ss.get("entropy_hist",[]))[-1] if ss.get("entropy_hist") else 0.0,
+                 (1-(list(ss.get("entropy_hist",[]))[-1]/math.log(ACTION_SIZE)) if ss.get("entropy_hist") else 0)*100),
                    unsafe_allow_html=True)
 
         st.markdown("### Convergence Conditions (Watkins & Dayan, 1992)")
