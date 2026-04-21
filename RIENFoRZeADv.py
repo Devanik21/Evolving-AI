@@ -1301,7 +1301,7 @@ def _tab_benchmark():
     st.markdown("---")
     st.markdown('<div class="ph">🌐 ENVIRONMENT DIAGNOSTICS</div>', unsafe_allow_html=True)
     e1,e2,e3,e4 = st.columns(4)
-    e1.metric("Maze",      f'{env_st["maze_h"]}×{env_st["maze_w"]}')
+    e1.metric("Maze",      env_st["maze_size"])
     e2.metric("Algorithm", env_st["algorithm"].upper())
     e3.metric("A* Optimal",env_st["astar_optimal"])
     e4.metric("Cells Vis.",env_st["cells_visited"])
