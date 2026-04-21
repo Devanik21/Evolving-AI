@@ -1457,6 +1457,159 @@ in general — but empirically robust with Double DQN + target network.
 </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════
+# TAB 9 — HYPER-VIZ MATRIX
+# ══════════════════════════════════════════════════════════
+def _tab_visualizations():
+    import altair as alt
+    ss = st.session_state
+    
+    st.markdown('<div class="ph">🌋 HYPER-VISUALIZATION MATRIX (24-DIMENSIONAL)</div>', unsafe_allow_html=True)
+    
+    if not ss.get("_render_viz", False):
+        st.info("🌌 The Hyper-Viz Matrix contains 24 high-resolution, color-mapped tensor streams. It is purely lazy-loaded to preserve the simulation tickrate.")
+        if st.button("🚀 IGNITE MATRIX (Mount Graphics)", width='stretch'):
+            ss._render_viz = True
+            st.rerun()
+        return
+        
+    if st.button("🔌 UNMOUNT MATRIX", width='stretch'):
+        ss._render_viz = False
+        st.rerun()
+
+    st.markdown("---")
+    
+    from collections import deque
+    def _sf(dq: deque, limit: int = 150): return list(dq)[-limit:] if dq else []
+
+    n = ss.config.get("chart_points", 150)
+    cd = ss.analytics.get_chart_data(n)
+    
+    # Altair Heatmap Helper
+    def _draw_heat(heat_array, cmap, title):
+        st.markdown(f"**{title}**")
+        df = pd.DataFrame(heat_array).melt(ignore_index=False).reset_index()
+        df.columns = ["y", "x", "val"]
+        c = alt.Chart(df).mark_rect().encode(
+            x=alt.X("x:O", axis=None),
+            y=alt.Y("y:O", axis=None),
+            color=alt.Color("val:Q", scale=alt.Scale(scheme=cmap), legend=None),
+            tooltip=["x", "y", "val"]
+        ).properties(height=240)
+        st.altair_chart(c, width='stretch')
+
+    C_RED, C_GRN, C_BLU, C_PUR, C_ORG, C_CYN, C_YLW = "#ef4444", "#22c55e", "#3b82f6", "#a855f7", "#f97316", "#00f5ff", "#eab308"
+
+    r1a, r1b, r1c = st.columns(3)
+    H, W = ss.env.maze.shape
+    with r1a: _draw_heat(ss.analytics.get_heatmap(H,W, episode=False), "inferno", "1. Macro-Exploration Heatmap")
+    with r1b: _draw_heat(ss.analytics.get_heatmap(H,W, episode=True), "viridis", "2. Micro-Exploration Heatmap")
+    with r1c:
+        st.markdown("**3. Action Preference Matrix**")
+        st.bar_chart(pd.DataFrame({"Frequency": [c/(sum(ss.action_counts)+1) for c in ss.action_counts]}, index=ACTIONS), color=C_PUR, height=270, width='stretch')
+
+    r2a, r2b, r2c = st.columns(3)
+    with r2a:
+        st.markdown("**4. Extrinsic Signal Tracker**")
+        st.area_chart(pd.DataFrame({"Extrinsic": _sf(ss.extr_hist, n)}), color=C_BLU, height=200, width='stretch')
+    with r2b:
+        st.markdown("**5. Curiosity Motivation**")
+        st.area_chart(pd.DataFrame({"Intrinsic": _sf(ss.intr_hist, n)}), color=C_ORG, height=200, width='stretch')
+    with r2c:
+        st.markdown("**6. EMA Reward Smoothing**")
+        st.area_chart(pd.DataFrame({"EMA": cd["ema_rewards"]}), color=C_GRN, height=200, width='stretch')
+
+    r3a, r3b, r3c = st.columns(3)
+    with r3a:
+        st.markdown("**7. Loss Function Manifold L(θ)**")
+        st.line_chart(pd.DataFrame({"Loss": cd["losses"][-n:]}) if cd["losses"] else pd.DataFrame(), color=C_RED, height=200, width='stretch')
+    with r3b:
+        st.markdown("**8. TD-Error Distribution δ**")
+        st.area_chart(pd.DataFrame({"TD-Error": cd["td_errors"][-n:]}) if cd["td_errors"] else pd.DataFrame(), color=C_YLW, height=200, width='stretch')
+    with r3c:
+        st.markdown("**9. Bellman Residual Delta**")
+        st.line_chart(pd.DataFrame({"Bellman": _sf(ss.get("bellman_hist",[]), n)}), color=C_CYN, height=200, width='stretch')
+
+    r4a, r4b, r4c = st.columns(3)
+    with r4a:
+        st.markdown("**10. Policy Entropy State H(π)**")
+        st.area_chart(pd.DataFrame({"Entropy": _sf(ss.get("entropy_hist",[]), n)}), color=C_ORG, height=200, width='stretch')
+    with r4b:
+        st.markdown("**11. Epsilon Annealing Ratio**")
+        st.line_chart(pd.DataFrame({"Epsilon": cd["epsilons"][-n:]}) if cd["epsilons"] else pd.DataFrame(), color=C_YLW, height=200, width='stretch')
+    with r4c:
+        st.markdown("**12. Q-Vector Action Spread**")
+        qval_data = list(ss.get("qval_hist", []))[-n:]
+        q_df = pd.DataFrame(qval_data, columns=["UP", "DOWN", "LEFT", "RIGHT"]) if qval_data else pd.DataFrame()
+        st.line_chart(q_df, height=200, width='stretch')
+
+    r5a, r5b, r5c = st.columns(3)
+    with r5a:
+        st.markdown("**13. Value Function V(s)**")
+        st.area_chart(pd.DataFrame({"V": _sf(ss.get("val_hist",[]), n)}), color=C_BLU, height=200, width='stretch')
+    with r5b:
+        st.markdown("**14. Max Advantage A(s,a)**")
+        st.area_chart(pd.DataFrame({"Advantage": _sf(ss.get("adv_hist",[]), n)}), color=C_GRN, height=200, width='stretch')
+    with r5c:
+        st.markdown("**15. Gradient Norm Tensor (‖ΔW₁‖_F)**")
+        st.line_chart(pd.DataFrame({"Gradient Norm": _sf(ss.get("gnorm_hist",[]), n)}), color=C_RED, height=200, width='stretch')
+
+    r6a, r6b, r6c = st.columns(3)
+    with r6a:
+        st.markdown("**16. Rolling Success Topology**")
+        r_succ = []
+        if cd["successes"]:
+            s = cd["successes"]
+            wn = min(20, len(s))
+            r_succ = [sum(s[max(0,i-wn):i+1])/min(i+1,wn) for i in range(len(s))]
+        st.area_chart(pd.DataFrame({"Win Rate": r_succ}), color=C_CYN, height=200, width='stretch')
+    with r6b:
+        st.markdown("**17. A* Pathing Optimality**")
+        st.area_chart(pd.DataFrame({"Optimality": cd["optimality"]}), color=C_PUR, height=200, width='stretch')
+    with r6c:
+        st.markdown("**18. Target Horizon (Steps vs Limit)**")
+        st.line_chart(pd.DataFrame({"Steps": cd["steps"]}), color=C_ORG, height=200, width='stretch')
+
+    r7a, r7b, r7c = st.columns(3)
+    with r7a:
+        st.markdown("**19. Capability Matrix Progress**")
+        cap_h = list(ss.analytics.capability.history)[-n:] if ss.analytics.capability.history else []
+        st.area_chart(pd.DataFrame({"Capability": cap_h}), color=C_CYN, height=200, width='stretch')
+    with r7b:
+        st.markdown("**20. Curriculum Level Epochs**")
+        st.area_chart(pd.DataFrame({"Level": cd["levels"]}), color=C_GRN, height=200, width='stretch')
+    with r7c:
+        st.markdown("**21. ZPD Rolling Target Scores**")
+        cur_hist = ss.brain.curriculum.history
+        cur_scores = [e["score"] for e in cur_hist[-min(len(cur_hist), n):]] if cur_hist else []
+        st.line_chart(pd.DataFrame({"ZPD": cur_scores}), color=C_BLU, height=200, width='stretch')
+
+    r8a, r8b, r8c = st.columns(3)
+    with r8a:
+        st.markdown("**22. Phase State: Loss vs TD-Error**")
+        n_len = min(len(cd["losses"]), len(cd["td_errors"]))
+        if n_len > 0:
+            st.scatter_chart(pd.DataFrame({"Loss": cd["losses"][-n_len:], "TD": cd["td_errors"][-n_len:]}), x="Loss", y="TD", color=C_RED, height=200, width='stretch')
+        else: st.info("Loading...")
+    with r8b:
+        st.markdown("**23. Phase State: Value vs Advantage**")
+        vls = _sf(ss.get("val_hist",[]), n); advs = _sf(ss.get("adv_hist",[]), n)
+        n_len = min(len(vls), len(advs))
+        if n_len > 0:
+            st.scatter_chart(pd.DataFrame({"V(s)": vls[-n_len:], "A(s,a)": advs[-n_len:]}), x="V(s)", y="A(s,a)", color=C_PUR, height=200, width='stretch')
+        else: st.info("Loading...")
+    with r8c:
+        st.markdown("**24. Phase State: Ep Horizon vs Reward Output**")
+        ep_log = list(ss.get("ep_log", []))[-n:]
+        if ep_log:
+            df_s1 = pd.DataFrame(ep_log)
+            if "success" in df_s1.columns:
+                df_s1["Win"] = df_s1["success"].apply(lambda x: "Yes" if x else "No")
+                st.scatter_chart(df_s1, x="steps", y="reward", color="Win", height=200, width='stretch')
+            else:
+                st.scatter_chart(df_s1, x="steps", y="reward", color=C_GRN, height=200, width='stretch')
+        else: st.info("Loading...")
+
+# ══════════════════════════════════════════════════════════
 # ENTRY POINT
 # ══════════════════════════════════════════════════════════
 def _main():
@@ -1473,6 +1626,7 @@ def _main():
         "📅 Episode Timeline",
         "🏆 Benchmark",
         "🔭 Research Lab",
+        "🌋 Hyper-Viz Matrix",
     ])
     with tabs[0]: _tab_mission()
     with tabs[1]: _tab_analytics()
@@ -1482,6 +1636,7 @@ def _main():
     with tabs[5]: _tab_timeline()
     with tabs[6]: _tab_benchmark()
     with tabs[7]: _tab_research()
+    with tabs[8]: _tab_visualizations()
 
     if ss.auto_mode:
         for _ in range(ss.config.get("steps_per_frame",1)):
