@@ -1,966 +1,1480 @@
 """
-app.py — A.L.I.V.E. NEXUS  v3.1  (Cloud-Optimised)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Speed strategy
-  • Plotly figures are CACHED in session_state and only rebuilt every
-    CHART_REFRESH_EVERY steps (or on demand).  st.line_chart (native)
-    is used for the high-frequency streaming metrics.
-  • All tab bodies execute on every rerun (Streamlit limitation) but
-    heavy work is guarded behind the cached figure system.
-  • HTML-injection is minimised on the simulation hot-path.
-  • auto-run uses minimal delay=0 + st.rerun(); UI richness is
-    preserved when paused.
+app.py ── A.L.I.V.E. NEXUS  v4.0  "Event Horizon Edition"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Co-Investigator: Xylia | Collaborator: Nik
+Project: The Event Horizon
 
-Backends (same directory):
-  world.py  brain.py  soul.py  memory_palace.py  analytics.py
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SCIENTIFIC INSTRUMENTATION  (new in v4.0)
+  ✦ Live Q(s,a) vector bar-chart — real-time policy readout
+  ✦ Policy entropy H(π) timeline — quantifies exploration
+  ✦ Reward decomposition: intrinsic (ICM) vs extrinsic
+  ✦ V(s) / max-Advantage streaming — dueling head analysis
+  ✦ Gradient-norm proxy tracker — training stability signal
+  ✦ Agent trajectory trail inside maze ASCII render
+  ✦ Convergence hypothesis test (t-test on reward gradient)
+  ✦ Learning-rate plateau & sensitivity gauge
+  ✦ Bellman residual stream (separate from MSE loss)
+  ✦ Action preference histogram (U/D/L/R distribution)
+  ✦ Episode-comparison panel: best vs worst vs current
+  ✦ Full Research Lab tab: equations, theory, citations
+
+PERFORMANCE CONTRACT (Streamlit Cloud)
+  ✦ Zero Plotly — native charts only
+  ✦ Maze ASCII cached per step_count
+  ✦ ZIP built only on button press
+  ✦ No numpy→list on every rerun
+  ✦ Chart slices computed once, shared
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-from __future__ import annotations
-import io, json, math, os, random, time, zipfile
-from collections import deque
-from typing import Dict, List, Optional
-
+import streamlit as st
 import numpy  as np
 import pandas as pd
-import streamlit as st
+import time, json, io, zipfile, math, random
+from collections import deque
+from typing import Dict, List, Optional, Tuple
 
-# ── backend imports ────────────────────────────────────────────────────────────
+# ── Backend ────────────────────────────────────────────────
 try:
     from world         import MazeEnvironment
     from brain         import AgentBrain
     from soul          import SoulCore
     from memory_palace import MemoryPalace
     from analytics     import PerformanceDashboard
-    _BACKENDS_OK = True; _BACKEND_ERR = ""
-except ImportError as _e:
-    _BACKENDS_OK = False; _BACKEND_ERR = str(_e)
+    _OK = True; _ERR = ""
+except ImportError as e:
+    _OK = False; _ERR = str(e)
 
-try:
-    import plotly.graph_objects as go
-    from   plotly.subplots      import make_subplots
-    _PLOTLY = True
-except ImportError:
-    _PLOTLY = False
+# ── Page config ────────────────────────────────────────────
+st.set_page_config(page_title="A.L.I.V.E. NEXUS",
+                   layout="wide",
+                   initial_sidebar_state="expanded",
+                   page_icon="🧬")
 
-# ── page config (must be first) ────────────────────────────────────────────────
-st.set_page_config(page_title="A.L.I.V.E. NEXUS", layout="wide",
-                   initial_sidebar_state="expanded", page_icon="🧬")
-
-# ── constants ──────────────────────────────────────────────────────────────────
-SAVE_PATH            = "./alive_nexus.json"
-STATE_SIZE           = 17
-ACTION_SIZE          = 4
-CHART_REFRESH_EVERY  = 25   # rebuild Plotly figures every N global steps
-
-DEFAULT_CFG: Dict = dict(
-    sim_speed=0.03, steps_per_frame=1, autosave_interval=100,
-    gamma=0.99, epsilon_min=0.04, epsilon_decay=0.997,
-    lr=0.001, batch_size=64, buffer_size=50_000,
-    n_steps=3, icm_beta=0.05, tau=0.005,
-    h1=256, h2=128, h3=64,
-    show_astar=False, compact_maze=False,
-    chart_points=200, override_curriculum=False, manual_level=1,
-)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CSS
-# ══════════════════════════════════════════════════════════════════════════════
+# ── CSS ────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap');
-.stApp{background:radial-gradient(ellipse at 20% 10%,#0d0d2e 0%,#080818 55%,#0a1a18 100%);color:#c9d1d9;}
-*{box-sizing:border-box;}
-.nt{font-family:'JetBrains Mono',monospace;font-size:1.9rem;font-weight:700;
-   background:linear-gradient(90deg,#00f5ff 0%,#a855f7 40%,#f97316 70%,#00f5ff 100%);
-   background-size:300% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-   animation:sh 4s linear infinite;}
-@keyframes sh{to{background-position:-300% 0;}}
-.ph{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:#a855f7;
-    text-transform:uppercase;letter-spacing:.14em;
-    padding:3px 0 5px;border-bottom:1px solid rgba(168,85,247,.22);margin-bottom:9px;}
-.kc{background:rgba(0,245,255,.03);border:1px solid rgba(0,245,255,.11);border-radius:9px;
-    padding:9px 12px;text-align:center;transition:border-color .2s,box-shadow .2s;}
-.kc:hover{border-color:rgba(0,245,255,.32);box-shadow:0 0 12px rgba(0,245,255,.1);}
-.kv{font-family:'JetBrains Mono',monospace;font-size:1.45rem;font-weight:700;color:#00f5ff;line-height:1.15;}
-.kl{font-size:.62rem;color:#8b949e;text-transform:uppercase;letter-spacing:.1em;margin-top:2px;}
-.ks{font-size:.6rem;color:#58a6ff;margin-top:2px;}
-.tb{background:rgba(168,85,247,.07);border-left:3px solid #a855f7;border-radius:0 8px 8px 0;
-    padding:9px 13px;font-size:.82rem;font-style:italic;color:#d8b4fe;line-height:1.5;margin:5px 0;}
-.cu{background:rgba(88,166,255,.09);border-right:3px solid #58a6ff;border-radius:9px 0 0 9px;
-    padding:7px 11px;margin:4px 0;text-align:right;font-size:.84rem;color:#cdd9e5;}
-.ca{background:rgba(168,85,247,.08);border-left:3px solid #a855f7;border-radius:0 9px 9px 0;
-    padding:7px 11px;margin:4px 0;font-size:.84rem;color:#d8b4fe;}
-.cm{font-size:.6rem;color:#6e7681;margin-top:1px;}
-.bd{display:inline-block;padding:1px 7px;border-radius:15px;font-size:.63rem;font-weight:700;
-    text-transform:uppercase;letter-spacing:.05em;font-family:'JetBrains Mono',monospace;margin:1px 2px;}
-.bc{background:rgba(0,245,255,.11);color:#00f5ff;border:1px solid rgba(0,245,255,.28);}
-.bp{background:rgba(168,85,247,.11);color:#a855f7;border:1px solid rgba(168,85,247,.28);}
-.bg{background:rgba(34,197,94,.11);color:#22c55e;border:1px solid rgba(34,197,94,.28);}
-.br{background:rgba(239,68,68,.11);color:#ef4444;border:1px solid rgba(239,68,68,.28);}
-.bo{background:rgba(249,115,22,.11);color:#f97316;border:1px solid rgba(249,115,22,.28);}
-.pb{background:rgba(255,255,255,.07);border-radius:4px;height:6px;overflow:hidden;}
-.pf{height:100%;border-radius:4px;transition:width .35s ease;}
-.mc{background:rgba(0,0,0,.55);border:1px solid rgba(0,245,255,.11);border-radius:8px;
-    padding:8px;font-size:.68rem;line-height:1.2;overflow:auto;max-height:360px;}
-.fc{background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.13);border-radius:6px;
-    padding:6px 10px;margin:2px 0;font-size:.76rem;}
-.mt{background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.13);border-radius:6px;
-    padding:6px 10px;margin:2px 0;font-size:.76rem;color:#c9d1d9;}
-.cv-w{background:rgba(59,130,246,.09);border:1px solid rgba(59,130,246,.22);}
-.cv-r{background:rgba(34,197,94,.09);border:1px solid rgba(34,197,94,.22);}
-.cv-f{background:rgba(234,179,8,.09);border:1px solid rgba(234,179,8,.22);}
-.cv-o{background:rgba(0,245,255,.09);border:1px solid rgba(0,245,255,.22);}
-.cv-p{background:rgba(168,85,247,.09);border:1px solid rgba(168,85,247,.22);}
-.cv-g{background:rgba(239,68,68,.09);border:1px solid rgba(239,68,68,.22);}
-.cv-base{border-radius:7px;padding:9px 13px;margin:5px 0;display:flex;align-items:center;gap:9px;font-size:.81rem;}
-.stButton>button{background:linear-gradient(135deg,rgba(0,245,255,.07),rgba(168,85,247,.07));
-    border:1px solid rgba(0,245,255,.22);color:#00f5ff;border-radius:7px;
-    font-family:'JetBrains Mono',monospace;font-size:.74rem;font-weight:600;letter-spacing:.04em;transition:all .18s;}
-.stButton>button:hover{border-color:rgba(0,245,255,.55);background:rgba(0,245,255,.14);
-    box-shadow:0 0 10px rgba(0,245,255,.18);transform:translateY(-1px);}
-div[data-testid="stMetric"]{background:rgba(255,255,255,.022);border:1px solid rgba(255,255,255,.05);border-radius:8px;padding:6px 9px;}
-div[data-testid="stMetricValue"]{font-family:'JetBrains Mono',monospace;color:#00f5ff;}
-.stTabs [data-baseweb="tab-list"]{background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.05);
-    border-radius:8px;gap:2px;padding:3px;}
-.stTabs [data-baseweb="tab"]{font-family:'JetBrains Mono',monospace;font-size:.71rem;
-    letter-spacing:.05em;color:#8b949e;border-radius:5px;}
-.stTabs [aria-selected="true"]{background:rgba(0,245,255,.09)!important;color:#00f5ff!important;}
-.stCode,.stCodeBlock{background:#0a0a18!important;border:1px solid rgba(0,245,255,.11)!important;
-    border-radius:7px!important;font-size:.68rem!important;line-height:1.1!important;}
-section[data-testid="stSidebar"]{background:rgba(8,8,24,.98);border-right:1px solid rgba(0,245,255,.07);}
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&display=swap');
 
+/* ─ base ─ */
+.stApp{background:radial-gradient(ellipse at 20% 10%,#0d0d2e 0%,#080818 55%,#0a1a18 100%);
+ color:#c9d1d9;font-family:'Segoe UI',sans-serif;}
+* {box-sizing:border-box;}
+
+/* ─ shimmer title ─ */
+.ntitle{font-family:'JetBrains Mono',monospace;font-size:1.85rem;font-weight:700;
+ background:linear-gradient(90deg,#00f5ff 0%,#a855f7 38%,#f97316 68%,#00f5ff 100%);
+ background-size:300% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+ animation:sh 4s linear infinite;}
+@keyframes sh{to{background-position:-300% 0}}
+
+/* ─ telemetry strip ─ */
+.tel{display:flex;gap:0;border:1px solid rgba(0,245,255,.1);border-radius:10px;
+ overflow:hidden;margin-bottom:10px;background:rgba(0,0,0,.2);}
+.tel-cell{flex:1;padding:6px 10px;text-align:center;
+ border-right:1px solid rgba(255,255,255,.05);}
+.tel-cell:last-child{border-right:none;}
+.tel-v{font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:700;color:#00f5ff;}
+.tel-l{font-size:.56rem;color:#6e7681;text-transform:uppercase;letter-spacing:.08em;}
+.tel-d{font-size:.6rem;margin-top:1px;}
+.tel-up{color:#22c55e;} .tel-dn{color:#ef4444;} .tel-nt{color:#8b949e;}
+
+/* ─ kpi card ─ */
+.kpi{background:rgba(0,245,255,.03);border:1px solid rgba(0,245,255,.12);
+ border-radius:10px;padding:10px 14px;text-align:center;transition:all .25s;}
+.kpi:hover{border-color:rgba(0,245,255,.4);box-shadow:0 0 16px rgba(0,245,255,.12);}
+.kv{font-family:'JetBrains Mono',monospace;font-size:1.45rem;font-weight:700;
+ color:#00f5ff;line-height:1.2;}
+.kl{font-size:.61rem;color:#8b949e;text-transform:uppercase;letter-spacing:.1em;margin-top:3px;}
+.ks{font-size:.57rem;color:#58a6ff;margin-top:2px;}
+
+/* ─ panel header ─ */
+.ph{font-family:'JetBrains Mono',monospace;font-size:.71rem;color:#a855f7;
+ text-transform:uppercase;letter-spacing:.15em;padding:4px 0 6px;
+ border-bottom:1px solid rgba(168,85,247,.25);margin-bottom:10px;}
+
+/* ─ thought box ─ */
+.thought{background:rgba(168,85,247,.07);border-left:3px solid #a855f7;
+ border-radius:0 8px 8px 0;padding:9px 14px;font-size:.83rem;font-style:italic;
+ color:#d8b4fe;line-height:1.5;margin:6px 0;}
+
+/* ─ equation box ─ */
+.eq{background:rgba(0,245,255,.04);border:1px solid rgba(0,245,255,.15);
+ border-radius:8px;padding:12px 16px;font-family:'JetBrains Mono',monospace;
+ font-size:.78rem;color:#c9d1d9;line-height:1.8;margin:6px 0;}
+.eq b{color:#00f5ff;} .eq em{color:#a855f7;} .eq u{color:#f97316;text-decoration:none;}
+
+/* ─ hypothesis banner ─ */
+.hyp-yes{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);
+ border-radius:8px;padding:10px 14px;font-size:.82rem;color:#86efac;}
+.hyp-no{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);
+ border-radius:8px;padding:10px 14px;font-size:.82rem;color:#fca5a5;}
+.hyp-unk{background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.3);
+ border-radius:8px;padding:10px 14px;font-size:.82rem;color:#fde68a;}
+
+/* ─ q-value readout ─ */
+.qrow{display:flex;gap:6px;margin:6px 0;}
+.qcell{flex:1;text-align:center;padding:6px 4px;border-radius:6px;
+ font-family:'JetBrains Mono',monospace;font-size:.8rem;font-weight:600;}
+
+/* ─ chat ─ */
+.chat-scroll{height:270px;overflow-y:auto;padding:8px;
+ border:1px solid rgba(255,255,255,.06);border-radius:8px;background:rgba(0,0,0,.18);}
+.cu{background:rgba(88,166,255,.10);border-right:3px solid #58a6ff;
+ border-radius:10px 0 0 10px;padding:7px 11px;margin:4px 0;
+ text-align:right;font-size:.84rem;color:#cdd9e5;}
+.ca{background:rgba(168,85,247,.09);border-left:3px solid #a855f7;
+ border-radius:0 10px 10px 0;padding:7px 11px;margin:4px 0;
+ font-size:.84rem;color:#d8b4fe;}
+.cmeta{font-size:.61rem;color:#6e7681;margin-top:2px;}
+
+/* ─ badges ─ */
+.badge{display:inline-block;padding:2px 8px;border-radius:16px;font-size:.62rem;
+ font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+ font-family:'JetBrains Mono',monospace;margin:1px 2px;}
+.bc{background:rgba(0,245,255,.12);color:#00f5ff;border:1px solid rgba(0,245,255,.3);}
+.bp{background:rgba(168,85,247,.12);color:#a855f7;border:1px solid rgba(168,85,247,.3);}
+.bg{background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.3);}
+.br{background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.3);}
+.bo{background:rgba(249,115,22,.12);color:#f97316;border:1px solid rgba(249,115,22,.3);}
+
+/* ─ convergence banners ─ */
+.cvb{border-radius:8px;padding:10px 14px;margin:6px 0;font-size:.82rem;
+ display:flex;align-items:center;gap:10px;}
+.cw{background:rgba(59,130,246,.10);border:1px solid rgba(59,130,246,.25);}
+.cr{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.25);}
+.cf{background:rgba(234,179,8,.10);border:1px solid rgba(234,179,8,.25);}
+.co{background:rgba(0,245,255,.10);border:1px solid rgba(0,245,255,.25);}
+.cp{background:rgba(168,85,247,.10);border:1px solid rgba(168,85,247,.25);}
+.cng{background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.25);}
+
+/* ─ memory cards ─ */
+.mc{background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.14);
+ border-radius:7px;padding:7px 11px;margin:3px 0;font-size:.78rem;color:#c9d1d9;}
+.es{border-left:3px solid #22c55e;padding-left:7px;}
+.ef{border-left:3px solid #ef4444;padding-left:7px;}
+
+/* ─ architecture box ─ */
+.arch{background:rgba(0,0,0,.28);border:1px solid rgba(0,245,255,.1);
+ border-radius:8px;padding:14px;font-family:'JetBrains Mono',monospace;
+ font-size:.75rem;line-height:1.9;}
+
+/* ─ citation card ─ */
+.cite{background:rgba(255,255,255,.025);border-left:3px solid #58a6ff;
+ border-radius:0 7px 7px 0;padding:8px 12px;margin:5px 0;font-size:.76rem;color:#8b949e;}
+
+/* ─ widgets ─ */
+.stButton>button{background:linear-gradient(135deg,rgba(0,245,255,.08),rgba(168,85,247,.08));
+ border:1px solid rgba(0,245,255,.25);color:#00f5ff;border-radius:7px;
+ font-family:'JetBrains Mono',monospace;font-size:.74rem;font-weight:600;
+ letter-spacing:.04em;transition:all .2s;}
+.stButton>button:hover{border-color:rgba(0,245,255,.65);background:rgba(0,245,255,.16);
+ box-shadow:0 0 14px rgba(0,245,255,.2);transform:translateY(-1px);}
+div[data-testid="stMetric"]{background:rgba(255,255,255,.025);
+ border:1px solid rgba(255,255,255,.055);border-radius:8px;padding:7px 10px;}
+div[data-testid="stMetricValue"]{font-family:'JetBrains Mono',monospace;color:#00f5ff;}
+.stTabs [data-baseweb="tab-list"]{background:rgba(255,255,255,.02);
+ border:1px solid rgba(255,255,255,.055);border-radius:8px;gap:2px;padding:4px;}
+.stTabs [data-baseweb="tab"]{font-family:'JetBrains Mono',monospace;
+ font-size:.68rem;letter-spacing:.05em;color:#8b949e;border-radius:6px;}
+.stTabs [aria-selected="true"]{background:rgba(0,245,255,.10)!important;color:#00f5ff!important;}
+.stCode,.stCodeBlock{background:#0a0a18!important;
+ border:1px solid rgba(0,245,255,.12)!important;border-radius:8px!important;
+ font-size:.69rem!important;line-height:1.1!important;}
+pre code{font-size:.69rem!important;}
+section[data-testid="stSidebar"]{background:rgba(8,8,24,.97);
+ border-right:1px solid rgba(0,245,255,.08);}
+#MainMenu,footer,header{visibility:hidden;}
 div[data-testid="stDecoration"]{display:none;}
 </style>""", unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BACKEND GUARD
-# ══════════════════════════════════════════════════════════════════════════════
-if not _BACKENDS_OK:
-    st.error(f"❌ Backend import failed: `{_BACKEND_ERR}`")
-    st.info("Put world.py  brain.py  soul.py  memory_palace.py  analytics.py in the same folder.")
+# ── Backend guard ──────────────────────────────────────────
+if not _OK:
+    st.error(f"❌ Backend import failed: `{_ERR}`")
+    st.info("Ensure world.py brain.py soul.py memory_palace.py analytics.py are co-located.")
     st.stop()
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SESSION INIT
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Constants ──────────────────────────────────────────────
+SAVE_PATH   = "./alive_nexus_v4.json"
+STATE_SIZE  = 17
+ACTION_SIZE = 4
+ACTIONS     = ["↑ UP", "↓ DOWN", "← LEFT", "→ RIGHT"]
+ACTION_CLR  = ["#00f5ff", "#a855f7", "#f97316", "#22c55e"]
+
+DEFAULT_CFG: Dict = {
+    "sim_speed": 0.04, "steps_per_frame": 1, "autosave_interval": 100,
+    "gamma": 0.99, "epsilon_min": 0.04, "epsilon_decay": 0.997,
+    "lr": 0.001, "batch_size": 64, "buffer_size": 50_000,
+    "n_steps": 3, "icm_beta": 0.05, "tau": 0.005,
+    "h1": 256, "h2": 128, "h3": 64,
+    "show_astar": False, "chart_points": 150,
+    "override_curriculum": False, "manual_level": 1,
+}
+
+# ── HTML helpers ───────────────────────────────────────────
+def _kpi(v, l, s=""):
+    return (f'<div class="kpi"><div class="kv">{v}</div><div class="kl">{l}</div>'
+            + (f'<div class="ks">{s}</div>' if s else "") + "</div>")
+
+def _conv_cls(s): return {"warming_up":"cw","rapid_learning":"cr","fine_tuning":"cf",
+    "converged":"co","plateau":"cp","regressing":"cng"}.get(s,"cw")
+def _conv_icon(s): return {"warming_up":"🔥","rapid_learning":"🚀","fine_tuning":"⚙️",
+    "converged":"✅","plateau":"📊","regressing":"⬇️"}.get(s,"❓")
+def _conv_desc(s): return {
+    "warming_up":   "Filling replay buffer. Bellman targets not yet computed.",
+    "rapid_learning":"dL/dt strongly negative. Policy gradient is effective.",
+    "fine_tuning":  "Marginal improvement. Epsilon near floor. Exploiting.",
+    "converged":    "KL(π_t || π_{t-1}) ≈ 0. Value function has stabilised.",
+    "plateau":      "High variance, zero slope. Local minimum suspected.",
+    "regressing":   "Negative reward trend. Check γ, τ, or buffer quality."}.get(s,"")
+
+def _np_enc(o):
+    if isinstance(o, np.integer): return int(o)
+    if isinstance(o, np.floating): return float(o)
+    if isinstance(o, np.ndarray): return o.tolist()
+    if isinstance(o, np.bool_): return bool(o)
+    if isinstance(o, deque): return list(o)
+    return str(o)
+
+# ── Science helpers ────────────────────────────────────────
+def _softmax(x: np.ndarray) -> np.ndarray:
+    e = np.exp(x - x.max()); return e / e.sum()
+
+def _entropy(p: np.ndarray) -> float:
+    p = np.clip(p, 1e-9, 1); return float(-np.sum(p * np.log(p)))
+
+def _ttest_slope(values: List[float]) -> Tuple[float, float]:
+    """Return (slope, p_value) from a 1-D linear regression t-test."""
+    n = len(values)
+    if n < 6:
+        return 0.0, 1.0
+    x = np.arange(n, dtype=float)
+    x -= x.mean(); y = np.array(values, dtype=float) - np.mean(values)
+    slope = float(np.dot(x, y) / (np.dot(x, x) + 1e-12))
+    resid = y - slope * x
+    s2    = float(np.dot(resid, resid) / max(n - 2, 1))
+    se    = math.sqrt(s2 / max(float(np.dot(x, x)), 1e-12))
+    t     = slope / max(se, 1e-12)
+    # two-tailed p approx via t-distribution tail (df=n-2)
+    df = n - 2
+    p  = 2.0 * (1.0 - min(abs(t) / (abs(t) + math.sqrt(df)), 0.9999))
+    return slope, float(np.clip(p, 0, 1))
+
+# ── Session init ───────────────────────────────────────────
 def _init():
-    ss = st.session_state
-    cfg = ss.get("config", dict(DEFAULT_CFG));  ss.config = cfg
-    bk  = {k: cfg[k] for k in ("gamma","epsilon_min","epsilon_decay","lr",
-           "batch_size","buffer_size","n_steps","icm_beta","tau","h1","h2","h3")}
+    ss  = st.session_state
+    cfg = ss.get("config", dict(DEFAULT_CFG))
+    ss.config = cfg
+    bk = {k: cfg[k] for k in
+          ("gamma","epsilon_min","epsilon_decay","lr","batch_size",
+           "buffer_size","n_steps","icm_beta","tau","h1","h2","h3")}
     ss.brain     = AgentBrain(STATE_SIZE, ACTION_SIZE, config=bk)
     ss.env       = MazeEnvironment()
     ss.soul      = SoulCore(name="Nik")
     ss.memory    = MemoryPalace(save_path=SAVE_PATH)
     ss.analytics = PerformanceDashboard()
-    lc           = ss.brain.curriculum.config
-    ss.cur_state = ss.env.reset(config=lc)
-    ss._prev_cells = 1
-    ss.memory.start_episode(ss.env.seed, ss.env.algorithm,
-        ss.env.maze_h, ss.env.maze_w,
-        ss.brain.curriculum.level, ss.brain.epsilon, ss.env.max_steps)
-    ss.auto_mode      = False
-    ss.global_step    = 0
-    ss.episode_count  = 0
-    ss.cap_score      = 0.0
-    ss.last_reward    = 0.0
-    ss.last_success   = False
-    # figure cache
-    ss._figs          = {}        # key → (step_built, figure)
-    ss._chat_scroll   = 0
+    ss.cur_state = ss.env.reset(config=ss.brain.curriculum.config)
+    ss._prev_cells   = 1
+    ss._maze_cache   = ("", -1)
+
+    # ── Scientific instrumentation buffers ──────────────────
+    N = 400
+    ss.qval_hist:     deque = deque(maxlen=N)   # list of 4 Q-values per step
+    ss.entropy_hist:  deque = deque(maxlen=N)   # H(softmax(Q))
+    ss.intr_hist:     deque = deque(maxlen=N)   # intrinsic reward
+    ss.extr_hist:     deque = deque(maxlen=N)   # extrinsic reward
+    ss.val_hist:      deque = deque(maxlen=N)   # V(s) from value head
+    ss.adv_hist:      deque = deque(maxlen=N)   # max A(s,a)
+    ss.gnorm_hist:    deque = deque(maxlen=N)   # gradient-norm proxy (|ΔW1|_F)
+    ss.bellman_hist:  deque = deque(maxlen=N)   # |r + γ max Q(s') - Q(s,a)|
+    ss.action_counts: List  = [0, 0, 0, 0]     # U D L R histogram
+    ss.trajectory:    deque = deque(maxlen=30)  # (r,c) recent positions
+    ss.prev_w1:       np.ndarray = ss.brain.online_net.W1.copy()  # for grad proxy
+    ss.best_ep:       Optional[Dict] = None
+    ss.worst_ep:      Optional[Dict] = None
+    ss.ep_log:        deque = deque(maxlen=200)  # lightweight episode log
+
+    ss.memory.start_episode(
+        maze_seed=ss.env.seed, maze_alg=ss.env.algorithm,
+        maze_h=ss.env.maze_h, maze_w=ss.env.maze_w,
+        level=ss.brain.curriculum.level,
+        epsilon=ss.brain.epsilon, max_steps=ss.env.max_steps)
+
+    ss.auto_mode       = False
+    ss.global_step     = 0
+    ss.episode_count   = 0
+    ss.capability      = 0.0
+    ss.last_ep_reward  = 0.0
+    ss.last_ep_success = False
 
 if "brain" not in st.session_state:
     _init()
 
-ss = st.session_state   # convenience alias
+# ── Simulation core ────────────────────────────────────────
+def _ep_done(info: Dict):
+    ss = st.session_state
+    env_st = ss.env.get_stats(); cur = ss.brain.curriculum.level
+    H, W   = ss.env.maze.shape; succ = bool(info.get("reached"))
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FIGURE CACHE  — lazy, throttled Plotly rendering
-# ══════════════════════════════════════════════════════════════════════════════
-def _fig_stale(key: str) -> bool:
-    """True if the cached figure is older than CHART_REFRESH_EVERY steps."""
-    entry = ss._figs.get(key)
-    if entry is None:
-        return True
-    step_built, _ = entry
-    return (ss.global_step - step_built) >= CHART_REFRESH_EVERY
+    ss.brain.curriculum.record(success=succ, steps=env_st["step_count"],
+        max_steps=env_st["max_steps"], reward=env_st["episode_reward"])
+    ss.memory.end_episode(
+        total_reward=env_st["episode_reward"], steps=env_st["step_count"],
+        success=succ, cells_visited=env_st["cells_visited"],
+        astar_optimal=env_st["astar_optimal"], fog=env_st["fog"],
+        traps=env_st["traps"] > 0,
+        td_error=ss.brain.avg_td_error, epsilon=ss.brain.epsilon)
+    cap = ss.analytics.record_episode(
+        reward=env_st["episode_reward"], steps=env_st["step_count"], success=succ,
+        info={"optimality": info.get("optimality",0.0),
+              "fog_coverage": info.get("fog_coverage",1.0),
+              "level": cur, "success_count": ss.env.success_count},
+        curriculum_level=cur, h=H, w=W, maze=ss.env.maze)
 
-def _store_fig(key: str, fig):
-    ss._figs[key] = (ss.global_step, fig)
+    ep_record = {
+        "ep": ss.episode_count, "reward": env_st["episode_reward"],
+        "steps": env_st["step_count"], "success": succ,
+        "level": cur, "efficiency": info.get("optimality", 0.0),
+    }
+    ss.ep_log.append(ep_record)
+    if ss.best_ep is None  or ep_record["reward"] > ss.best_ep["reward"]:  ss.best_ep  = ep_record
+    if ss.worst_ep is None or ep_record["reward"] < ss.worst_ep["reward"]: ss.worst_ep = ep_record
 
-def _get_fig(key: str):
-    entry = ss._figs.get(key)
-    return entry[1] if entry else None
+    ss.capability = cap; ss.last_ep_reward = env_st["episode_reward"]
+    ss.last_ep_success = succ; ss.episode_count += 1
 
-def _show(key: str, builder_fn, **kwargs):
-    """Build+cache a Plotly figure only when stale; always display it."""
-    if _PLOTLY:
-        if _fig_stale(key):
-            _store_fig(key, builder_fn(**kwargs))
-        fig = _get_fig(key)
-        if fig:
-            st.plotly_chart(fig, width='stretch', key=f"plt_{key}")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PLOTLY BUILDERS  (pure functions, no Streamlit calls)
-# ══════════════════════════════════════════════════════════════════════════════
-_L = dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(8,8,24,.85)",
-          font=dict(color="#8b949e", family="JetBrains Mono,monospace", size=10),
-          margin=dict(l=36,r=14,t=32,b=28),
-          xaxis=dict(gridcolor="rgba(255,255,255,.04)", zeroline=False),
-          yaxis=dict(gridcolor="rgba(255,255,255,.04)", zeroline=False))
-
-def _build_lines(xs, traces, title="", height=210):
-    fig = go.Figure()
-    for t in traces:
-        fig.add_trace(go.Scatter(x=xs, y=t["y"], name=t["name"], mode="lines",
-            line=dict(color=t.get("c","#00f5ff"), width=t.get("w",1.5)),
-            fill=t.get("fill"), fillcolor=t.get("fc")))
-    l = dict(_L); l["title"]=dict(text=title,font=dict(size=10,color="#8b949e")); l["height"]=height
-    fig.update_layout(**l)
-    return fig
-
-def _build_emotion(v, a):
-    fig = go.Figure()
-    for cx,cy,r,lbl,col in [(0.65,0.55,.30,"Excited","rgba(249,115,22,.09)"),
-                              (0.65,-0.50,.28,"Serene","rgba(34,197,94,.09)"),
-                              (-0.60,0.60,.28,"Alarmed","rgba(239,68,68,.07)"),
-                              (-0.60,-0.40,.26,"Depressed","rgba(88,166,255,.08)"),
-                              (0.60,0.10,.22,"Happy","rgba(0,245,255,.07)"),
-                              (0.00,0.00,.16,"Neutral","rgba(168,85,247,.06)")]:
-        fig.add_shape(type="circle",x0=cx-r,y0=cy-r,x1=cx+r,y1=cy+r,fillcolor=col,line_width=0)
-        fig.add_annotation(x=cx,y=cy,text=lbl,font=dict(size=8,color="rgba(180,180,180,.4)"),showarrow=False)
-    for v_ in [-1,0,1]:
-        fig.add_hline(y=v_,line_color="rgba(255,255,255,.05)",line_width=.5)
-        fig.add_vline(x=v_,line_color="rgba(255,255,255,.05)",line_width=.5)
-    fig.add_trace(go.Scatter(x=[v],y=[a],mode="markers",
-        marker=dict(size=28,color="rgba(168,85,247,.16)",line=dict(color="rgba(168,85,247,.35)",width=1)),showlegend=False))
-    fig.add_trace(go.Scatter(x=[v],y=[a],mode="markers",
-        marker=dict(size=12,color="#a855f7",line=dict(color="#d8b4fe",width=2)),showlegend=False))
-    l=dict(_L); l.update(
-        title=dict(text="Emotion Circumplex (Russell)",font=dict(size=10,color="#8b949e")),
-        xaxis=dict(**_L["xaxis"],title="Valence →",range=[-1.2,1.2]),
-        yaxis=dict(**_L["yaxis"],title="Arousal ↑",range=[-1.2,1.2]),height=290)
-    fig.update_layout(**l); return fig
-
-def _build_ocean(O,C,E,A,N):
-    cats=["Openness","Conscientious","Extraversion","Agreeableness","Neuroticism"]
-    vals=[O,C,E,A,N,O]; cats_c=cats+[cats[0]]
-    fig=go.Figure(go.Scatterpolar(r=vals,theta=cats_c,fill="toself",
-        fillcolor="rgba(168,85,247,.13)",line=dict(color="#a855f7",width=2),
-        marker=dict(size=5,color="#a855f7")))
-    fig.update_layout(polar=dict(bgcolor="rgba(8,8,24,.7)",
-        radialaxis=dict(visible=True,range=[0,1],gridcolor="rgba(255,255,255,.05)",tickfont=dict(size=7,color="#6e7681")),
-        angularaxis=dict(gridcolor="rgba(255,255,255,.05)",tickfont=dict(size=8,color="#c9d1d9"))),
-        paper_bgcolor="rgba(0,0,0,0)",showlegend=False,
-        margin=dict(l=28,r=28,t=32,b=28),height=270,
-        title=dict(text="Personality (OCEAN)",font=dict(size=10,color="#8b949e")))
-    return fig
-
-def _build_heatmap(data, title="Heatmap"):
-    fig=go.Figure(go.Heatmap(z=data[::-1],
-        colorscale=[[0,"rgba(8,8,24,1)"],[.15,"rgba(59,130,246,.6)"],
-                    [.45,"rgba(168,85,247,.85)"],[.75,"rgba(239,68,68,.9)"],[1,"rgba(255,230,0,1)"]],
-        showscale=False,hovertemplate="(%{x},%{y}): %{z:.2f}<extra></extra>"))
-    l=dict(_L); l.update(title=dict(text=title,font=dict(size=10,color="#8b949e")),
-        height=230,xaxis=dict(visible=False),yaxis=dict(visible=False))
-    fig.update_layout(**l); return fig
-
-def _build_radar_cap(vals_pct):
-    labs=["Success","Efficiency","Exploration","Convergence","Curriculum"]
-    r=vals_pct+[vals_pct[0]]; t=labs+[labs[0]]
-    fig=go.Figure(go.Scatterpolar(r=r,theta=t,fill="toself",
-        fillcolor="rgba(0,245,255,.09)",line=dict(color="#00f5ff",width=2),
-        marker=dict(size=6,color="#00f5ff")))
-    fig.update_layout(polar=dict(bgcolor="rgba(8,8,24,.7)",
-        radialaxis=dict(visible=True,range=[0,1],gridcolor="rgba(255,255,255,.05)",tickfont=dict(size=7,color="#6e7681")),
-        angularaxis=dict(gridcolor="rgba(255,255,255,.05)",tickfont=dict(size=8,color="#c9d1d9"))),
-        paper_bgcolor="rgba(0,0,0,0)",showlegend=False,
-        margin=dict(l=30,r=30,t=32,b=28),height=290,
-        title=dict(text="Capability Radar",font=dict(size=10,color="#8b949e")))
-    return fig
-
-def _build_curriculum_bar(level, scores, promote, demote):
-    xs=list(range(1,len(scores)+1))
-    cols=["#22c55e" if s>=promote else ("#ef4444" if s<=demote else "#58a6ff") for s in scores]
-    fig=go.Figure(go.Bar(x=xs,y=scores,marker_color=cols))
-    fig.add_hline(y=promote,line_color="#22c55e",line_dash="dot",annotation_text="→ promote",annotation_font_size=8)
-    fig.add_hline(y=demote, line_color="#ef4444",line_dash="dot",annotation_text="→ demote", annotation_font_size=8)
-    l=dict(_L); l.update(title=dict(text=f"Curriculum Window — Level {level}",font=dict(size=10,color="#8b949e")),height=195)
-    fig.update_layout(**l); return fig
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HTML HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-def kpi(v,l,s=""):
-    return (f'<div class="kc"><div class="kv">{v}</div>'
-            f'<div class="kl">{l}</div>'+(f'<div class="ks">{s}</div>' if s else "")+"</div>")
-
-def pb(frac, color="#00f5ff"):
-    p=max(0.,min(1.,frac))*100
-    return f'<div class="pb"><div class="pf" style="width:{p:.1f}%;background:{color};"></div></div>'
-
-_CONV_CSS = {"warming_up":"cv-w","rapid_learning":"cv-r","fine_tuning":"cv-f",
-             "converged":"cv-o","plateau":"cv-p","regressing":"cv-g"}
-_CONV_ICO = {"warming_up":"🔥","rapid_learning":"🚀","fine_tuning":"⚙️",
-             "converged":"✅","plateau":"📊","regressing":"⬇️"}
-_CONV_TXT = {"warming_up":"Filling buffer. Learning not yet started.",
-             "rapid_learning":"Strong positive gradient — policy improving fast.",
-             "fine_tuning":"Gradual improvement — policy consolidating.",
-             "converged":"Stable performance. Policy at equilibrium.",
-             "plateau":"No clear trend. High variance. Possibly stuck.",
-             "regressing":"Negative trend detected. Check hyperparams."}
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SIMULATION ENGINE
-# ══════════════════════════════════════════════════════════════════════════════
-def _episode_done(info):
-    es  = ss.env.get_stats()
-    lvl = ss.brain.curriculum.level
-    ss.brain.curriculum.record(bool(info.get("reached")), es["step_count"],
-                               es["max_steps"], es["episode_reward"])
-    ss.memory.end_episode(es["episode_reward"], es["step_count"],
-        bool(info.get("reached")), es["cells_visited"], es["astar_optimal"],
-        es["fog"], es["traps"]>0, ss.brain.avg_td_error, ss.brain.epsilon)
-    H,W = ss.env.maze.shape
-    ss.cap_score = ss.analytics.record_episode(
-        es["episode_reward"], es["step_count"], bool(info.get("reached")),
-        {"optimality":info.get("optimality",0.),"fog_coverage":info.get("fog_coverage",1.),"level":lvl},
-        lvl, H, W, ss.env.maze)
-    ss.last_reward  = es["episode_reward"]
-    ss.last_success = bool(info.get("reached"))
-    ss.episode_count += 1
-    if ss.episode_count % ss.config.get("autosave_interval",100) == 0:
+    if ss.episode_count % ss.config.get("autosave_interval", 100) == 0:
         _do_save()
+
     new_cfg = ss.brain.curriculum.config
     if ss.config.get("override_curriculum"):
-        new_cfg = dict(ss.brain.curriculum.LEVEL_CONFIGS.get(
-            ss.config.get("manual_level",1), new_cfg))
-    ss.cur_state = ss.env.reset(config=new_cfg)
-    ss._prev_cells = 1
-    ss.memory.start_episode(ss.env.seed, ss.env.algorithm,
-        ss.env.maze_h, ss.env.maze_w,
-        ss.brain.curriculum.level, ss.brain.epsilon, ss.env.max_steps)
+        lvl = ss.config.get("manual_level", 1)
+        new_cfg = dict(ss.brain.curriculum.LEVEL_CONFIGS.get(lvl, new_cfg))
+    ss.cur_state  = ss.env.reset(config=new_cfg)
+    ss._prev_cells = 1; ss._maze_cache = ("", -1)
+    ss.trajectory.clear()
+    ss.memory.start_episode(
+        maze_seed=ss.env.seed, maze_alg=ss.env.algorithm,
+        maze_h=ss.env.maze_h, maze_w=ss.env.maze_w,
+        level=ss.brain.curriculum.level,
+        epsilon=ss.brain.epsilon, max_steps=ss.env.max_steps)
+
 
 def process_step():
+    ss     = st.session_state
     state  = ss.cur_state
     action = ss.brain.act(state)
-    nxt, reward, done, info = ss.env.step(action)
-    loss, td = ss.brain.step(state, action, reward, nxt, done)
-    ss.memory.record_transition(state, action, reward, nxt, done)
-    ss.analytics.record_step(ss.env.agent_r, ss.env.agent_c, loss, td, ss.brain.epsilon)
-    trap_near = bool(ss.env.traps and any(
-        abs(t.r-ss.env.agent_r)+abs(t.c-ss.env.agent_c)<=3 for t in ss.env.traps))
+
+    # ── Scientific instrumentation (pre-step) ──────────────
+    bn  = ss.brain.online_net
+    qv, _ = bn.forward(state, training=False)
+    q   = qv[0]                                 # shape (4,)
+    prb = _softmax(q)
+    ent = _entropy(prb)
+    val_raw = float(bn.forward(state, training=False)[0].mean())
+    adv_raw = float(q.max() - q.mean())
+
+    ss.qval_hist.append(q.tolist())
+    ss.entropy_hist.append(ent)
+    ss.val_hist.append(val_raw)
+    ss.adv_hist.append(adv_raw)
+    ss.action_counts[action] += 1
+
+    # ── Step ───────────────────────────────────────────────
+    ns, reward, done, info = ss.env.step(action)
+
+    # Bellman residual
+    qns, _ = bn.forward(ns, training=False)
+    br_res = abs(reward + ss.brain.gamma*(1-float(done))*float(qns[0].max()) - q[action])
+    ss.bellman_hist.append(float(br_res))
+
+    # Intrinsic / extrinsic decomposition
+    intr = float(ss.brain.curiosity.bonus(state))
+    ss.intr_hist.append(intr)
+    ss.extr_hist.append(float(reward))
+
+    loss, td_err = ss.brain.step(state, action, reward, ns, done)
+
+    # Gradient-norm proxy: Frobenius norm of ΔW1
+    new_w1 = bn.W1
+    gnorm  = float(np.linalg.norm(new_w1 - ss.prev_w1, 'fro'))
+    ss.gnorm_hist.append(gnorm)
+    ss.prev_w1 = new_w1.copy()
+
+    ss.memory.record_transition(state, action, reward, ns, done)
+    ss.analytics.record_step(ss.env.agent_r, ss.env.agent_c, loss, td_err, ss.brain.epsilon)
+
     nc = len(ss.env.cells_visited); is_new = nc > ss._prev_cells; ss._prev_cells = nc
+    ss.trajectory.append((ss.env.agent_r, ss.env.agent_c))
+    trap_near = bool(ss.env.traps and
+        any(abs(t.r-ss.env.agent_r)+abs(t.c-ss.env.agent_c)<=3 for t in ss.env.traps))
+
     ss.soul.update_from_rl(
-        {"epsilon":ss.brain.epsilon,"avg_loss":ss.brain.avg_loss,
-         "avg_td_error":ss.brain.avg_td_error,"train_step":ss.brain.train_step,
-         "avg_reward":ss.brain.avg_reward,"curriculum":ss.brain.curriculum.get_stats()},
-        {"reward":reward,"reached":info.get("reached",False),"timeout":info.get("timeout",False),
-         "trap_hit":info.get("trap_hit",False),"trap_nearby":trap_near,"portal_used":False,
-         "is_new_cell":is_new,"success_count":ss.env.success_count,
-         "success_rate":ss.env.success_count/max(ss.env.total_episodes,1),
-         "cells_visited":nc,"maze_size":f"{ss.env.maze_h}×{ss.env.maze_w}"})
-    ss.cur_state = nxt; ss.global_step += 1
-    if done: _episode_done(info)
+        stats={"epsilon": ss.brain.epsilon, "avg_loss": ss.brain.avg_loss,
+               "avg_td_error": ss.brain.avg_td_error, "train_step": ss.brain.train_step,
+               "avg_reward": ss.brain.avg_reward, "curriculum": ss.brain.curriculum.get_stats()},
+        env_info={"reward": reward, "reached": info.get("reached",False),
+                  "timeout": info.get("timeout",False), "trap_hit": info.get("trap_hit",False),
+                  "trap_nearby": trap_near, "portal_used": False, "is_new_cell": is_new,
+                  "success_count": ss.env.success_count,
+                  "success_rate": ss.env.success_count/max(ss.env.total_episodes,1),
+                  "cells_visited": nc, "maze_size": f"{ss.env.maze_h}x{ss.env.maze_w}"})
+
+    ss.cur_state = ns; ss.global_step += 1
+    if done: _ep_done(info)
+
 
 def reset_all():
     for k in ["brain","env","soul","memory","analytics","cur_state","global_step",
-              "episode_count","cap_score","last_reward","last_success","_prev_cells","_figs"]:
+              "episode_count","capability","last_ep_reward","last_ep_success",
+              "_prev_cells","_maze_cache","qval_hist","entropy_hist","intr_hist",
+              "extr_hist","val_hist","adv_hist","gnorm_hist","bellman_hist",
+              "action_counts","trajectory","prev_w1","best_ep","worst_ep","ep_log"]:
         st.session_state.pop(k, None)
     st.session_state.auto_mode = False
     _init()
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PERSISTENCE
-# ══════════════════════════════════════════════════════════════════════════════
-def _np(o):
-    if isinstance(o,np.integer): return int(o)
-    if isinstance(o,np.floating): return float(o)
-    if isinstance(o,np.ndarray): return o.tolist()
-    if isinstance(o,np.bool_): return bool(o)
-    if isinstance(o,deque): return list(o)
-    return str(o)
-
-def _do_save():
+# ── Persistence ────────────────────────────────────────────
+def _do_save() -> bool:
+    ss = st.session_state
     try:
-        return ss.memory.save_all(ss.brain.get_weights(),
-            ss.analytics.tracker.session_summary(), ss.soul.get_status())
-    except Exception as e:
-        st.toast(f"⚠️ Save error: {e}"); return False
+        return ss.memory.save_all(brain_weights=ss.brain.get_weights(),
+            analytics_data=ss.analytics.tracker.session_summary(),
+            soul_status=ss.soul.get_status())
+    except Exception as e: st.toast(f"Save error: {e}"); return False
 
-def _export_zip():
+def _make_zip() -> Optional[bytes]:
+    ss = st.session_state
     try:
-        p={"version":"3.1","saved_at":time.time(),"config":ss.config,
-           "brain":ss.brain.get_weights(),"soul":ss.soul.get_status(),
-           "analytics":ss.analytics.tracker.session_summary(),
-           "memory":ss.memory.get_full_status(),
-           "global_step":ss.global_step,"episode_count":ss.episode_count,
-           "cap_score":ss.cap_score}
-        buf=io.BytesIO()
+        p = {"version":"4.0","saved_at":time.time(),"config":ss.config,
+             "brain":ss.brain.get_weights(),"soul":ss.soul.get_status(),
+             "analytics_summary":ss.analytics.tracker.session_summary(),
+             "memory_status":ss.memory.get_full_status(),
+             "global_step":ss.global_step,"episode_count":ss.episode_count,
+             "capability":ss.capability}
+        buf = io.BytesIO()
         with zipfile.ZipFile(buf,"w",zipfile.ZIP_DEFLATED) as z:
-            z.writestr("alive_nexus.json", json.dumps(p,indent=2,default=_np))
+            z.writestr("alive_nexus_v4.json",json.dumps(p,indent=2,default=_np_enc))
         return buf.getvalue()
-    except: return None
+    except Exception as e: st.toast(f"Export error: {e}"); return None
 
-def _load_zip(f):
+def _load_zip(up) -> bool:
+    ss = st.session_state
     try:
-        with zipfile.ZipFile(f,"r") as z:
-            with z.open("alive_nexus.json") as fp: data=json.load(fp)
-        if "brain" in data: ss.brain.set_weights(data["brain"]); ss.brain.target_net.copy_from(ss.brain.online_net)
-        if "soul" in data:
-            p=data["soul"]
-            for t in "OCEAN":
-                if t in p: setattr(ss.soul.personality,t,float(p[t]))
-            if "relationship" in p: ss.soul.relationship.score=float(p["relationship"])
-        ss.global_step=data.get("global_step",0); ss.episode_count=data.get("episode_count",0)
-        ss.cap_score=data.get("cap_score",0.); ss.config.update(data.get("config",{}))
+        with zipfile.ZipFile(up,"r") as z:
+            with z.open("alive_nexus_v4.json") as f: d = json.load(f)
+        if "brain" in d:
+            ss.brain.set_weights(d["brain"]); ss.brain.target_net.copy_from(ss.brain.online_net)
+        if "soul" in d:
+            p = d["soul"]
+            for t in ("O","C","E","A","N"):
+                if t in p: setattr(ss.soul.personality, t, float(p[t]))
+            if "relationship" in p: ss.soul.relationship.score = float(p["relationship"])
+        ss.global_step=d.get("global_step",0); ss.episode_count=d.get("episode_count",0)
+        ss.capability=d.get("capability",0.0)
+        if "config" in d: ss.config.update(d["config"])
         return True
-    except Exception as e: st.error(f"❌ Load: {e}"); return False
+    except Exception as e: st.error(f"Load failed: {e}"); return False
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Maze render ────────────────────────────────────────────
+def _get_maze() -> str:
+    ss = st.session_state
+    cached, step = ss.get("_maze_cache", ("", -1))
+    if step == ss.env.step_count and cached: return cached
+    s, _ = ss.env.render_ascii()
+    ss._maze_cache = (s, ss.env.step_count); return s
+
+def _get_maze_with_trail() -> str:
+    """Overlay trajectory trail onto maze string."""
+    ss     = st.session_state
+    trail  = set(ss.trajectory)
+    H, W   = ss.env.maze.shape
+    syms   = {WALL:"██", PATH:"  "}
+    rows   = []
+    for r in range(H):
+        row = ""
+        for c in range(W):
+            is_agent  = (r==ss.env.agent_r  and c==ss.env.agent_c)
+            is_target = (r==ss.env.target_r and c==ss.env.target_c)
+            is_trap   = any(t.r==r and t.c==c for t in ss.env.traps)
+            is_trail  = (r,c) in trail and not is_agent
+            if is_agent:  row += "🤖"
+            elif is_target: row += "🏁"
+            elif is_trap:   row += "💀"
+            elif ss.env.maze[r,c]==1:
+                fog = ss.env.use_fog and not ss.env.fog.explored[r,c]
+                row += "▓▓" if fog else "██"
+            elif is_trail:  row += "·· "
+            else:           row += "  "
+        rows.append(row)
+    return '\n'.join(rows)
+
+def _cdf(data, keys, n=150):
+    rows = {k: list(data.get(k,[]))[-n:] for k in keys}
+    ml = min((len(v) for v in rows.values()), default=0)
+    return pd.DataFrame({k: v[-ml:] for k,v in rows.items()})
+
+# ── Telemetry strip ────────────────────────────────────────
+def _telemetry_strip():
+    ss   = st.session_state
+    br   = ss.brain; an = ss.analytics
+    live = an.get_live_stats(); sl = ss.soul.get_status()
+    ent  = list(ss.entropy_hist)[-1] if ss.entropy_hist else 0.0
+    cap  = ss.capability
+
+    def _d(v, ref=0, fmt=".2f"):
+        if v > ref: return f'<span class="tel-up">▲</span>'
+        if v < ref: return f'<span class="tel-dn">▼</span>'
+        return f'<span class="tel-nt">─</span>'
+
+    cells = [
+        (f"{ss.episode_count}",   "Episodes",  f'<span class="tel-nt">global</span>'),
+        (f"{live['success_rate']:.1f}%","Win Rate", _d(live['success_rate'],50)),
+        (f"{br.epsilon:.4f}",     "Epsilon",   _d(-br.epsilon,-0.5)),
+        (f"{br.avg_reward:+.2f}", "Avg Reward",_d(br.avg_reward,0)),
+        (f"{br.avg_loss:.4f}",    "Avg Loss",  _d(-br.avg_loss,-0.01)),
+        (f"{ent:.3f}",            "H(π) Entropy",f'<span class="tel-nt">nats</span>'),
+        (f"L{br.curriculum.level}/10","Curriculum",_d(br.curriculum.level,1)),
+        (f"{cap:.1f}",            "Capability",_d(cap,50)),
+        (f"{ss.global_step:,}",   "Total Steps",f'<span class="tel-nt">env</span>'),
+        (f"{sl['mood_emoji']} {sl['mood'][:6]}","Soul Mood",
+         f'<span class="tel-nt">V={sl["valence"]:+.2f}</span>'),
+    ]
+    html = '<div class="tel">'
+    for v,l,d in cells:
+        html += f'<div class="tel-cell"><div class="tel-v">{v}</div><div class="tel-l">{l}</div><div class="tel-d">{d}</div></div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════
 # SIDEBAR
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 def _sidebar():
-    cfg = ss.config
+    ss = st.session_state; cfg = ss.config
     with st.sidebar:
-        st.markdown('<div style="font-family:\'JetBrains Mono\',monospace;font-size:.88rem;font-weight:700;'
-                    'color:#00f5ff;letter-spacing:.06em;padding:6px 0 10px;">🧬 A.L.I.V.E. NEXUS</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div style="font-family:JetBrains Mono,monospace;font-size:.88rem;'
+                    'font-weight:700;color:#00f5ff;letter-spacing:.06em;padding:4px 0 8px;">'
+                    '🧬 A.L.I.V.E. NEXUS v4.0</div>', unsafe_allow_html=True)
+
         st.markdown('<div class="ph">⚡ SIMULATION</div>', unsafe_allow_html=True)
-        c1,c2=st.columns(2)
-        if c1.button("▶ RUN",  width='stretch'): ss.auto_mode=True
-        if c2.button("⏸ PAUSE",width='stretch'): ss.auto_mode=False
-        c3,c4=st.columns(2)
-        if c3.button("⏭ STEP", width='stretch'):
+        r1,r2 = st.columns(2)
+        if r1.button("▶ RUN",   use_container_width=True): ss.auto_mode = True
+        if r2.button("⏸ PAUSE", use_container_width=True): ss.auto_mode = False
+        r3,r4 = st.columns(2)
+        if r3.button("⏭ STEP",  use_container_width=True):
             for _ in range(cfg.get("steps_per_frame",1)): process_step()
             st.rerun()
-        if c4.button("🔄 RESET",width='stretch'): reset_all(); st.rerun()
-        cfg["sim_speed"]=st.slider("Delay (s)",0.0,0.5,cfg.get("sim_speed",0.03),0.01)
-        cfg["steps_per_frame"]=st.select_slider("Steps/frame",[1,2,4,8,16,32],cfg.get("steps_per_frame",1))
+        if r4.button("🔄 RESET", use_container_width=True): reset_all(); st.rerun()
+        cfg["sim_speed"]       = st.slider("Delay (s)", 0.0, 0.5, cfg.get("sim_speed",0.04), 0.01)
+        cfg["steps_per_frame"] = st.select_slider("Steps/frame",[1,2,4,8,16,32],
+                                                    cfg.get("steps_per_frame",1))
+
         st.markdown('<div class="ph">🌐 ENVIRONMENT</div>', unsafe_allow_html=True)
-        cfg["override_curriculum"]=st.toggle("Override Curriculum",cfg.get("override_curriculum",False))
+        cfg["override_curriculum"] = st.toggle("Override Curriculum",
+                                                cfg.get("override_curriculum",False))
         if cfg["override_curriculum"]:
-            cfg["manual_level"]=st.slider("Force Level",1,10,cfg.get("manual_level",1))
-        cfg["show_astar"]=st.toggle("Show A* Overlay",cfg.get("show_astar",False))
-        cfg["compact_maze"]=st.toggle("Compact Maze",cfg.get("compact_maze",False))
-        st.markdown('<div class="ph">🧠 HYPERPARAMS</div>', unsafe_allow_html=True)
-        with st.expander("Tune", expanded=False):
-            cfg["gamma"]=st.slider("γ",0.80,0.999,cfg.get("gamma",0.99),format="%.3f")
-            cfg["epsilon_decay"]=st.slider("ε decay",0.990,0.9999,cfg.get("epsilon_decay",0.997),format="%.4f")
-            cfg["epsilon_min"]=st.slider("ε min",0.01,0.15,cfg.get("epsilon_min",0.04),0.005)
-            cfg["lr"]=st.slider("LR",1e-4,5e-3,cfg.get("lr",1e-3),format="%.4f")
-            cfg["tau"]=st.slider("τ",0.001,0.05,cfg.get("tau",0.005),0.001)
-            cfg["icm_beta"]=st.slider("ICM β",0.0,0.2,cfg.get("icm_beta",0.05),0.01)
-            cfg["n_steps"]=st.select_slider("N-Step",[1,2,3,5,8],cfg.get("n_steps",3))
-            cfg["batch_size"]=st.select_slider("Batch",[32,64,128,256],cfg.get("batch_size",64))
-        with st.expander("Architecture (→ Reset)", expanded=False):
-            st.info("Changing these needs Hard Reset.")
-            cfg["h1"]=st.select_slider("H1",[64,128,256,512],cfg.get("h1",256))
-            cfg["h2"]=st.select_slider("H2",[32,64,128,256],cfg.get("h2",128))
-            cfg["h3"]=st.select_slider("H3",[16,32,64,128],cfg.get("h3",64))
-            cfg["buffer_size"]=st.select_slider("Buffer",[10_000,25_000,50_000,100_000],cfg.get("buffer_size",50_000))
+            cfg["manual_level"] = st.slider("Force Level",1,10,cfg.get("manual_level",1))
+        cfg["show_astar"] = st.toggle("Show A* Overlay", cfg.get("show_astar",False))
+        cfg["trail"]      = st.toggle("Agent Trail",      cfg.get("trail",True))
+
+        st.markdown('<div class="ph">🧠 BRAIN CONFIG</div>', unsafe_allow_html=True)
+        with st.expander("Tune Hyperparameters", expanded=False):
+            cfg["gamma"]         = st.slider("γ Discount",   0.80,0.999, cfg["gamma"],  format="%.3f")
+            cfg["epsilon_decay"] = st.slider("ε Decay",      0.990,0.9999,cfg["epsilon_decay"],format="%.4f")
+            cfg["epsilon_min"]   = st.slider("ε Min",        0.01, 0.15,  cfg["epsilon_min"],0.005)
+            cfg["lr"]            = st.slider("Learning Rate",1e-4, 5e-3,  cfg["lr"],    format="%.4f")
+            cfg["tau"]           = st.slider("τ Soft-update",0.001,0.05,  cfg["tau"],   0.001)
+            cfg["icm_beta"]      = st.slider("ICM β",        0.0,  0.2,   cfg["icm_beta"],0.01)
+            cfg["n_steps"]       = st.select_slider("N-Step",[1,2,3,5,8], cfg["n_steps"])
+            cfg["batch_size"]    = st.select_slider("Batch", [32,64,128,256],cfg["batch_size"])
+        with st.expander("Architecture (needs Reset)", expanded=False):
+            st.info("Changing these requires a Hard Reset.")
+            cfg["h1"] = st.select_slider("H1",[64,128,256,512],cfg["h1"])
+            cfg["h2"] = st.select_slider("H2",[32,64,128,256], cfg["h2"])
+            cfg["h3"] = st.select_slider("H3",[16,32,64,128],  cfg["h3"])
+            cfg["buffer_size"] = st.select_slider("Buffer",[10_000,25_000,50_000,100_000],
+                                                    cfg["buffer_size"])
+
         st.markdown('<div class="ph">💾 PERSISTENCE</div>', unsafe_allow_html=True)
-        if st.button("💾 Save",width='stretch'):
+        if st.button("💾 Save Checkpoint", use_container_width=True):
             st.toast("✅ Saved!" if _do_save() else "❌ Failed")
-        zb=_export_zip()
-        if zb: st.download_button("⬇️ Export ZIP",zb,f"alive_ep{ss.episode_count}.zip","application/zip",width='stretch')
-        up=st.file_uploader("📂 Load ZIP",type="zip",label_visibility="collapsed")
-        if up and st.button("Restore",width='stretch'):
+        if st.button("⬇️ Build & Export ZIP", use_container_width=True):
+            zb = _make_zip()
+            if zb:
+                st.download_button("⬇️ Download",data=zb,
+                    file_name=f"ALIVE_v4_ep{ss.episode_count}_L{ss.brain.curriculum.level}.zip",
+                    mime="application/zip",use_container_width=True,key="_sdl")
+        up = st.file_uploader("📂 Load ZIP",type="zip",label_visibility="collapsed")
+        if up and st.button("Restore",use_container_width=True):
             if _load_zip(up): st.toast("✅ Restored!"); st.rerun()
-        st.markdown('<div class="ph">👤 SOUL</div>', unsafe_allow_html=True)
-        nn=st.text_input("Your Name",value=ss.soul.user_name,label_visibility="collapsed")
-        if nn!=ss.soul.user_name: ss.soul.user_name=nn
-        cfg["chart_points"]=st.slider("Chart History",50,500,cfg.get("chart_points",200),25)
-        cfg["autosave_interval"]=st.slider("Autosave (eps)",25,500,cfg.get("autosave_interval",100),25)
-        bs=ss.brain.get_stats(); sl=ss.soul.get_status()
+
+        st.markdown('<div class="ph">👤 SOUL / DISPLAY</div>', unsafe_allow_html=True)
+        nn = st.text_input("Your Name",value=ss.soul.user_name,label_visibility="collapsed")
+        if nn != ss.soul.user_name: ss.soul.user_name = nn
+        cfg["chart_points"]      = st.slider("Chart history",50,400,cfg.get("chart_points",150),25)
+        cfg["autosave_interval"] = st.slider("Autosave (eps)",25,500,cfg.get("autosave_interval",100),25)
+
+        br = ss.brain.get_stats(); sl = ss.soul.get_status()
         st.markdown("---")
-        st.markdown(f'<div style="font-size:.69rem;line-height:1.9;">'
-            f'<b style="color:#00f5ff;">ε</b> {bs["epsilon"]:.4f}&nbsp; '
-            f'<b style="color:#22c55e;">Lvl</b> {bs["curriculum"]["level"]}&nbsp; '
+        st.markdown(
+            f'<div style="font-size:.69rem;line-height:1.9;">'
+            f'<b style="color:#00f5ff;">ε</b> {br["epsilon"]:.4f} &nbsp;'
+            f'<b style="color:#22c55e;">Lvl</b> {br["curriculum"]["level"]} &nbsp;'
             f'<b style="color:#a855f7;">Mood</b> {sl["mood_emoji"]} {sl["mood"]}<br>'
-            f'<b style="color:#f97316;">Steps</b> {ss.global_step:,}&nbsp; '
+            f'<b style="color:#f97316;">Steps</b> {ss.global_step:,} &nbsp;'
             f'<b style="color:#58a6ff;">Eps</b> {ss.episode_count}'
             f'</div>', unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — MISSION CONTROL
-# ══════════════════════════════════════════════════════════════════════════════
-def _tab_mission():
-    cfg=ss.config; rd=ss.env.get_render_data(); es=ss.env.get_stats()
-    lv=ss.analytics.get_live_stats(); bs=ss.brain.get_stats()
+# ══════════════════════════════════════════════════════════
+# HEADER
+# ══════════════════════════════════════════════════════════
+def _header():
+    ss = st.session_state
+    h1,h2,h3 = st.columns([4,3,2])
+    with h1:
+        st.markdown(
+            '<div class="ntitle">🧬 A.L.I.V.E. NEXUS</div>'
+            '<div style="font-size:.65rem;color:#6e7681;letter-spacing:.06em;margin-top:2px;">'
+            'Adaptive Learning Intelligence &amp; Virtual Evolution — Event Horizon Edition v4.0</div>',
+            unsafe_allow_html=True)
+    with h2:
+        live = ss.analytics.get_live_stats(); sl = ss.soul.get_status()
+        st.markdown(
+            f'<div style="text-align:center;font-size:.71rem;line-height:2.15;padding-top:6px;">'
+            f'<span class="badge bc">EP {ss.episode_count}</span>'
+            f'<span class="badge bg">✓ {live["success_rate"]:.1f}%</span>'
+            f'<span class="badge bp">L{ss.brain.curriculum.level}</span>'
+            f'<span class="badge bo">ε {ss.brain.epsilon:.4f}</span>'
+            f'<span style="font-size:1.1rem;">{sl["mood_emoji"]}</span>'
+            f'</div>', unsafe_allow_html=True)
+    with h3:
+        lbl = "⏸ PAUSE" if ss.auto_mode else "▶ AUTO RUN"
+        if st.button(lbl,use_container_width=True,key="htog"): ss.auto_mode=not ss.auto_mode
+        if st.button("⏭ STEP ×1",use_container_width=True,key="hstp"):
+            process_step(); st.rerun()
+    st.markdown("---")
+    _telemetry_strip()
 
-    left,right=st.columns([3,2],gap="large")
+# ══════════════════════════════════════════════════════════
+# TAB 1 — MISSION CONTROL
+# ══════════════════════════════════════════════════════════
+def _tab_mission():
+    ss = st.session_state; cfg = ss.config
+    env_st = ss.env.get_stats(); br = ss.brain.get_stats()
+    sl = ss.soul.get_status(); live = ss.analytics.get_live_stats()
+    cur = ss.brain.curriculum.get_stats()
+
+    left, right = st.columns([3,2], gap="large")
+
     with left:
         st.markdown('<div class="ph">🗺️ LIVE ENVIRONMENT</div>', unsafe_allow_html=True)
-        maze_txt, legend = ss.env.render_ascii()
-        # A* overlay
+        k1,k2,k3,k4 = st.columns(4)
+        k1.markdown(_kpi(f"{ss.episode_count}","Episodes",  f"Win {live['success_rate']:.1f}%"), unsafe_allow_html=True)
+        k2.markdown(_kpi(f"{br['epsilon']:.3f}","Epsilon",  f"Decay {cfg['epsilon_decay']}"),    unsafe_allow_html=True)
+        k3.markdown(_kpi(f"L{cur['level']}","Curriculum",   cur["config"]["algorithm"].upper()), unsafe_allow_html=True)
+        k4.markdown(_kpi(f"{ss.capability:.1f}","Capability",f"Trend {live['capability_trend']}"),unsafe_allow_html=True)
+        st.markdown("")
+
+        maze_fn = _get_maze_with_trail if cfg.get("trail", True) else _get_maze
+        st.code(maze_fn(), language=None)
+
         if cfg.get("show_astar"):
-            path=ss.env.get_astar_path()
-            if path:
-                lines=maze_txt.split("\n")
-                for (r,c) in path[1:-1]:
-                    row=list(lines[r]); row[c*2:c*2+2]="··"
-                    lines[r]="".join(row)
-                maze_txt="\n".join(lines)
-        fs="0.6rem" if cfg.get("compact_maze") else "0.7rem"
-        st.markdown(f'<div class="mc" style="font-size:{fs};"><pre>{maze_txt}</pre></div>',
-                    unsafe_allow_html=True)
-        st.caption(legend)
-        prog=es["step_count"]/max(es["max_steps"],1)
-        st.markdown(pb(prog,"#22c55e" if prog<.7 else ("#f97316" if prog<.9 else "#ef4444")),
-                    unsafe_allow_html=True)
-        cl=ss.brain.curriculum.config
-        badges=(f'<span class="bd bc">ALG:{cl["algorithm"].upper()}</span>'
-                f'<span class="bd bp">L{ss.brain.curriculum.level}/10</span>'
-                f'<span class="bd bo">ε:{ss.brain.epsilon:.3f}</span>'
-                f'<span class="bd bg">WINS:{ss.env.success_count}</span>'
-                +('<span class="bd br">🌫FOG</span>' if cl["fog"] else "")
-                +('<span class="bd br">💀TRAPS</span>' if cl["dynamic"] else "")
-                +('<span class="bd bp">🌀PORTALS</span>' if cl["portals"] else ""))
-        st.markdown(f'<div style="margin-top:6px;">{badges}</div>', unsafe_allow_html=True)
+            path = ss.env.get_astar_path()
+            st.caption(f"⭐ A*: **{len(path)-1 if path else '∞'} steps** (current: {env_st['step_count']})")
 
-    with right:
-        st.markdown('<div class="ph">🧬 CONSCIOUSNESS</div>', unsafe_allow_html=True)
-        sl=ss.soul.get_status()
-        st.markdown(f'<div class="tb">{sl["thought"]}</div>', unsafe_allow_html=True)
-        st.markdown('<div class="ph">📡 BRAIN SNAPSHOT</div>', unsafe_allow_html=True)
-        m1,m2,m3=st.columns(3)
-        m1.metric("Avg Reward",f'{bs["avg_reward"]:.2f}')
-        m2.metric("Avg Loss",f'{bs["avg_loss"]:.4f}')
-        m3.metric("TD-Error",f'{bs["avg_td_error"]:.3f}')
-        m4,m5,m6=st.columns(3)
-        m4.metric("Train Steps",f'{bs["train_step"]:,}')
-        m5.metric("Memory",f'{bs["memory_size"]:,}')
-        m6.metric("LR",f'{bs["lr"]:.5f}')
-        conv=lv["convergence"]
-        css=_CONV_CSS.get(conv,"cv-w"); ico=_CONV_ICO.get(conv,""); txt=_CONV_TXT.get(conv,"")
-        st.markdown(f'<div class="cv-base {css}">'
-                    f'<span style="font-size:1.2rem;">{ico}</span>'
-                    f'<span><b style="color:#c9d1d9;">{conv.upper()}</b><br>'
-                    f'<span style="font-size:.73rem;color:#8b949e;">{txt}</span></span></div>',
-                    unsafe_allow_html=True)
-        st.markdown(f"**Curriculum L{ss.brain.curriculum.level}/10**")
-        st.markdown(pb(ss.brain.curriculum.zpd_progress,"#a855f7"), unsafe_allow_html=True)
-        st.caption(f"ZPD → promote at {ss.brain.curriculum.promote_thresh*100:.0f}%")
-        trend=lv["capability_trend"]
-        st.metric("🎯 Capability",f'{lv["capability"]:.1f}/100',delta=trend)
-        st.metric("✓ Success Rate",f'{lv["success_rate"]:.1f}%')
+        st.progress(min(env_st["step_count"]/max(env_st["max_steps"],1),1.0),
+                    text=f"Step {env_st['step_count']} / {env_st['max_steps']}")
+        ec = cur["config"]
+        bdg = (f'<span class="badge bc">{ec["algorithm"].upper()}</span>'
+               f'<span class="badge bp">LVL {cur["level"]}/10</span>'
+               f'<span class="badge bo">ε {br["epsilon"]:.3f}</span>'
+               f'<span class="badge bg">WINS {ss.env.success_count}</span>')
+        if ec.get("fog"):     bdg += '<span class="badge br">🌫 FOG</span>'
+        if ec.get("dynamic"): bdg += '<span class="badge br">💀 TRAPS</span>'
+        if ec.get("portals"): bdg += '<span class="badge bp">🌀 PORTALS</span>'
+        st.markdown(f'<div style="margin-top:4px;">{bdg}</div>', unsafe_allow_html=True)
 
-    # ── fast native charts (always fresh, cheap) ─────────────────────────────
-    st.markdown("---")
-    st.markdown('<div class="ph">📈 STREAMING METRICS</div>', unsafe_allow_html=True)
-    cd=ss.analytics.get_chart_data(cfg.get("chart_points",200))
-    c_a,c_b=st.columns(2)
-    with c_a:
-        if cd["ema_rewards"]:
-            st.line_chart(pd.DataFrame({"EMA Reward":cd["ema_rewards"],"Raw":cd["rewards"]}),height=145)
-    with c_b:
-        if cd["epsilons"]:
-            st.line_chart(pd.DataFrame({"Epsilon":cd["epsilons"][-300:]}),height=145)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — ANALYTICS LAB
-# ══════════════════════════════════════════════════════════════════════════════
-def _tab_analytics():
-    cfg=ss.config; lv=ss.analytics.get_live_stats()
-    cd=ss.analytics.get_chart_data(cfg.get("chart_points",200))
-    N=len(cd["rewards"]); xs=list(range(N))
-
-    # KPI strip
-    kpis=[
-        kpi(f'{lv["success_rate"]:.1f}%',"Success Rate",f'±trend {lv["reward_trend"]:+.4f}'),
-        kpi(f'{lv["avg_reward"]:+.2f}',"Avg Reward (50ep)"),
-        kpi(f'{lv["avg_steps"]:.0f}',"Avg Steps/Ep"),
-        kpi(f'{lv["capability"]:.1f}',"Capability /100",lv["capability_trend"]),
-        kpi(f'{ss.episode_count}',"Episodes",f'L{ss.brain.curriculum.level}'),
-        kpi(f'{ss.global_step:,}',"Global Steps"),
-    ]
-    cols=st.columns(len(kpis))
-    for col,k in zip(cols,kpis): col.markdown(k, unsafe_allow_html=True)
-    st.markdown("---")
-
-    # Convergence banner
-    conv=lv["convergence"]; css=_CONV_CSS.get(conv,"cv-w"); ico=_CONV_ICO.get(conv,""); txt=_CONV_TXT.get(conv,"")
-    st.markdown(f'<div class="cv-base {css}" style="font-size:.84rem;">'
-                f'<span style="font-size:1.4rem;">{ico}</span>'
-                f'<div><b style="color:#c9d1d9;">{conv.replace("_"," ").title()}</b><br>'
-                f'<span style="font-size:.74rem;color:#8b949e;">{txt}</span></div></div>',
-                unsafe_allow_html=True)
-    st.markdown("---")
-
-    l1,l2=st.columns(2)
-    with l1:
-        if N>1:
-            _show("reward_line", _build_lines,
-                  xs=xs,
-                  traces=[{"y":cd["rewards"],"name":"Reward","c":"rgba(0,245,255,.5)","w":1},
-                          {"y":cd["ema_rewards"],"name":"EMA","c":"#00f5ff","w":2,
-                           "fill":"tonexty","fc":"rgba(0,245,255,.06)"}],
-                  title="Episode Reward", height=220)
-        if cd["losses"]:
-            xs_l=list(range(len(cd["losses"])))
-            _show("loss_line", _build_lines,
-                  xs=xs_l, traces=[{"y":cd["losses"],"name":"Loss","c":"#f97316","w":1.2}],
-                  title="Training Loss", height=200)
-    with l2:
-        if cd["td_errors"]:
-            xs_t=list(range(len(cd["td_errors"])))
-            _show("td_line", _build_lines,
-                  xs=xs_t, traces=[{"y":cd["td_errors"],"name":"TD-Error","c":"#a855f7","w":1.2}],
-                  title="TD-Error", height=200)
-        if N>1:
-            _show("steps_line", _build_lines,
-                  xs=xs, traces=[{"y":cd["steps"],"name":"Steps","c":"#58a6ff","w":1.2}],
-                  title="Steps per Episode", height=200)
-
-    st.markdown("---")
-    # Heatmaps
-    H,W=ss.env.maze.shape
-    hm_g=ss.analytics.get_heatmap(H,W,episode=False)
-    hm_e=ss.analytics.get_heatmap(H,W,episode=True)
-    hc1,hc2=st.columns(2)
-    with hc1: _show("heatmap_global",_build_heatmap,data=hm_g,title="Global Visit Heatmap")
-    with hc2: _show("heatmap_ep",    _build_heatmap,data=hm_e,title="Episode Visit Heatmap")
-
-    st.markdown("---")
-    # Curriculum bar
-    win=list(ss.brain.curriculum.window)
-    if win:
-        _show("curr_bar",_build_curriculum_bar,
-              level=ss.brain.curriculum.level, scores=win,
-              promote=ss.brain.curriculum.promote_thresh,
-              demote=ss.brain.curriculum.demote_thresh)
-    c1,c2,c3=st.columns(3)
-    c1.metric("Promotions",ss.brain.curriculum.promotions)
-    c2.metric("Demotions", ss.brain.curriculum.demotions)
-    c3.metric("Avg Score", f'{ss.brain.curriculum.avg_score:.3f}')
-
-    if not _PLOTLY:
-        st.warning("⚠️ Install plotly for charts: `pip install plotly`")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — SOUL MATRIX
-# ══════════════════════════════════════════════════════════════════════════════
-def _tab_soul():
-    sl=ss.soul.get_status()
-    left,right=st.columns([5,4],gap="large")
-
-    with left:
-        st.markdown("### 💬 Cognitive Interface")
-        st.markdown(f'<div class="tb">{sl["thought"]}</div>', unsafe_allow_html=True)
-        chat_box=st.container(height=370)
-        with chat_box:
-            for msg in ss.soul.get_chat_history():
-                if msg["role"]=="user":
-                    st.markdown(f'<div class="cu"><b>YOU</b> '
-                                f'<span class="cm">intent:{msg.get("intent","?")}</span><br>{msg["text"]}</div>',
-                                unsafe_allow_html=True)
-                else:
-                    st.markdown(f'<div class="ca"><b>A.L.I.V.E.</b> '
-                                f'<span class="cm">mood:{msg.get("emotion","?")}</span><br>{msg["text"]}</div>',
-                                unsafe_allow_html=True)
-        ui=st.chat_input("Speak to A.L.I.V.E. ...")
-        if ui: ss.soul.chat(ui); st.rerun()
-        st.markdown("**Quick Prompts**")
-        qc=st.columns(4)
-        for col,p in zip(qc,["Hello!","How do you feel?","What are you?","Am I your friend?"]):
-            if col.button(p,width='stretch',key=f"qp_{p}"): ss.soul.chat(p); st.rerun()
-
-    with right:
-        st.markdown("### 🌀 Identity Core")
-        v=sl["valence"]; a=sl["arousal"]
-        st.markdown(f'<div style="text-align:center;padding:8px 0;">'
-                    f'<div style="font-size:2.4rem;">{sl["mood_emoji"]}</div>'
-                    f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:1rem;color:#00f5ff;">'
-                    f'{sl["mood"].upper()}</div>'
-                    f'<div style="font-size:.73rem;color:#8b949e;margin-top:4px;">'
-                    f'V:{v:+.3f} | A:{a:+.3f} | I:{sl["intensity"]:.3f}</div></div>',
-                    unsafe_allow_html=True)
-        _show("emotion_plot",_build_emotion,v=v,a=a)
-        st.markdown(f'**Relationship:** {sl["stage"]} — {sl["relationship"]}%')
-        st.markdown(pb(sl["relationship"]/100,"#22c55e"), unsafe_allow_html=True)
-        st.caption(sl["stage_desc"])
+        # ── Live Q-value readout ──────────────────────────
         st.markdown("---")
-        _show("ocean_radar",_build_ocean,
-              O=sl["O"],C=sl["C"],E=sl["E"],A=sl["A"],N=sl["N"])
-        st.markdown("**Emotional Memories**")
-        for m in sl.get("strongest_memories",[]):
-            st.markdown(f'<div class="mt">💭 {m}</div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — MEMORY PALACE
-# ══════════════════════════════════════════════════════════════════════════════
-def _tab_memory():
-    fs=ss.memory.get_full_status(); es=fs.get("episodic_stats",{})
-    left,right=st.columns(2,gap="medium")
-    with left:
-        st.markdown('<div class="ph">📖 EPISODIC MEMORY</div>', unsafe_allow_html=True)
-        if es:
-            m1,m2,m3,m4=st.columns(4)
-            m1.metric("Stored",es.get("total_stored",0))
-            m2.metric("Success",f'{es.get("success_rate",0)*100:.1f}%')
-            m3.metric("Landmarks",es.get("landmarks",0))
-            m4.metric("Max Level",es.get("max_level_reached",1))
-        rec=fs.get("episodic_recent",[])
-        if rec:
-            df=pd.DataFrame(rec)[["episode_id","curriculum_level","total_reward","success","total_steps","efficiency","maze_alg"]]
-            df.columns=["EP#","LVL","REWARD","WIN","STEPS","EFFIC","ALG"]
-            df["WIN"]=df["WIN"].map({True:"✅",False:"❌"})
-            st.dataframe(df.tail(10),width='stretch',hide_index=True)
-        st.markdown('<div class="ph">🌟 LANDMARKS</div>', unsafe_allow_html=True)
-        for lm in fs.get("landmark_episodes",[])[:4]:
-            cls="ep-success" if lm["success"] else "ep-fail"
-            st.markdown(f'<div class="mt {cls}">'
-                        f'<b>EP#{lm["episode_id"]}</b> L{lm["curriculum_level"]} {lm["maze_alg"]}&nbsp;'
-                        f'R:<b>{lm["total_reward"]:.1f}</b> eff:{lm["efficiency"]:.2%} '
-                        f'{"✅" if lm["success"] else "❌"}</div>',
+        st.markdown('<div class="ph">🎯 LIVE POLICY READOUT — Q(s,a)</div>', unsafe_allow_html=True)
+        if ss.qval_hist:
+            qv = np.array(ss.qval_hist[-1])
+            prb = _softmax(qv); best = int(np.argmax(qv))
+            q_df = pd.DataFrame({"Q-Value": qv, "Prob": prb},
+                                 index=ACTIONS)
+            st.bar_chart(q_df[["Q-Value"]], height=120, use_container_width=True)
+            row = ""
+            for i,(a,p) in enumerate(zip(ACTIONS, prb)):
+                hi = "font-weight:700;" if i==best else ""
+                row += (f'<span style="background:{ACTION_CLR[i]}22;'
+                        f'border:1px solid {ACTION_CLR[i]}55;border-radius:6px;'
+                        f'padding:3px 8px;margin:2px;font-family:JetBrains Mono,monospace;'
+                        f'font-size:.72rem;color:{ACTION_CLR[i]};{hi}">'
+                        f'{a} {p*100:.0f}%</span>')
+            st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:2px;">{row}</div>',
                         unsafe_allow_html=True)
+
     with right:
-        st.markdown('<div class="ph">🧬 SEMANTIC MEMORY</div>', unsafe_allow_html=True)
-        facts=fs.get("semantic_facts",[])
-        if facts:
-            fdf=pd.DataFrame(facts)[["key","value","confidence","source"]].head(14)
-            fdf.columns=["FACT","VALUE","CONF","SOURCE"]
-            st.dataframe(fdf,width='stretch',hide_index=True)
-        else: st.info("Semantic memory empty. Play more episodes.")
-        st.markdown('<div class="ph">💡 INSIGHTS</div>', unsafe_allow_html=True)
-        for ins in fs.get("insights",[]): st.markdown(f"• {ins}")
-        st.markdown('<div class="ph">💾 STORAGE</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="fc">'
-                    f'Path: <code>{fs["save_path"]}</code><br>'
-                    f'Size: <code>{fs["save_size_kb"]:.1f} KB</code>&nbsp;'
-                    f'Episodes: <code>{fs["total_episodes"]}</code>&nbsp;'
-                    f'Loaded: <code>{"YES" if fs["loaded_from_disk"] else "NO"}</code></div>',
+        st.markdown('<div class="ph">🧠 BRAIN SNAPSHOT</div>', unsafe_allow_html=True)
+        m1,m2,m3 = st.columns(3)
+        m1.metric("Avg Reward",  f"{br['avg_reward']:+.2f}")
+        m2.metric("Avg Loss",    f"{br['avg_loss']:.4f}")
+        m3.metric("TD-Error",    f"{br['avg_td_error']:.3f}")
+        m4,m5,m6 = st.columns(3)
+        m4.metric("Train Steps", f"{br['train_step']:,}")
+        m5.metric("Memory",      f"{br['memory_size']:,}")
+        m6.metric("LR",          f"{br['lr']:.5f}")
+
+        c_st = live["convergence"]
+        st.markdown(
+            f'<div class="cvb {_conv_cls(c_st)}">'
+            f'<span style="font-size:1.2rem;">{_conv_icon(c_st)}</span>'
+            f'<div><b>{c_st.upper()}</b><br>'
+            f'<span style="font-size:.74rem;color:#8b949e;">{_conv_desc(c_st)}</span>'
+            f'</div></div>', unsafe_allow_html=True)
+
+        st.progress(cur["zpd_progress"],
+                    text=f"ZPD {cur['zpd_progress']*100:.0f}% → L{cur['level']}")
+
+        # ── Policy entropy ────────────────────────────────
+        st.markdown("---")
+        st.markdown('<div class="ph">📐 POLICY ENTROPY H(π)</div>', unsafe_allow_html=True)
+        if len(ss.entropy_hist) > 3:
+            ent_df = pd.DataFrame({"H(π)": list(ss.entropy_hist)[-150:]})
+            st.line_chart(ent_df, height=110, use_container_width=True)
+            cur_ent = list(ss.entropy_hist)[-1]
+            max_ent = math.log(ACTION_SIZE)
+            st.caption(f"H(π)={cur_ent:.3f} nats  |  H_max={max_ent:.3f}  "
+                       f"|  Exploitation ratio {(1-cur_ent/max_ent)*100:.0f}%")
+
+        # ── Soul ──────────────────────────────────────────
+        st.markdown("---")
+        st.markdown('<div class="ph">💬 CONSCIOUSNESS STREAM</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="thought">{sl["thought"]}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="text-align:center;font-size:2rem;margin:4px 0;">{sl["mood_emoji"]}</div>'
+            f'<div style="text-align:center;font-size:.84rem;color:#a855f7;">{sl["mood"].upper()}</div>'
+            f'<div style="text-align:center;font-size:.68rem;color:#8b949e;">'
+            f'V={sl["valence"]:+.2f}  A={sl["arousal"]:+.2f}</div>',
+            unsafe_allow_html=True)
+        st.progress(ss.soul.relationship.score/100,
+                    text=f"Bond: {sl['stage']} ({sl['relationship']}/100)")
+
+    # ── Chart strip ───────────────────────────────────────
+    st.markdown("---")
+    n = cfg.get("chart_points",150); cd = ss.analytics.get_chart_data(n)
+    cc1,cc2 = st.columns(2)
+    with cc1:
+        if cd.get("rewards"):
+            df = _cdf(cd,["ema_rewards","rewards"],n); df.columns = ["EMA","Raw"]
+            st.markdown("**Reward History**")
+            st.line_chart(df,height=150,use_container_width=True)
+    with cc2:
+        if ss.intr_hist and ss.extr_hist:
+            ni = min(len(ss.intr_hist),len(ss.extr_hist),n)
+            df = pd.DataFrame({"Intrinsic":list(ss.intr_hist)[-ni:],
+                                "Extrinsic":list(ss.extr_hist)[-ni:]})
+            st.markdown("**Reward Decomposition: ICM vs Extrinsic**")
+            st.line_chart(df,height=150,use_container_width=True)
+
+# ══════════════════════════════════════════════════════════
+# TAB 2 — ANALYTICS LAB
+# ══════════════════════════════════════════════════════════
+def _tab_analytics():
+    ss = st.session_state; cfg = ss.config
+    n = cfg.get("chart_points",150); cd = ss.analytics.get_chart_data(n)
+    live = ss.analytics.get_live_stats()
+
+    st.markdown('<div class="ph">📊 ANALYTICS LABORATORY</div>', unsafe_allow_html=True)
+    k1,k2,k3,k4,k5 = st.columns(5)
+    k1.metric("Success Rate",  f'{live["success_rate"]:.1f}%')
+    k2.metric("Avg Reward",    f'{live["avg_reward"]:+.3f}')
+    k3.metric("Avg Steps/Ep",  f'{live["avg_steps"]:.1f}')
+    k4.metric("Convergence",   live["convergence_icon"]+" "+live["convergence"])
+    k5.metric("Capability",    f'{live["capability"]:.1f}/100',delta=live["capability_trend"])
+    st.markdown("---")
+
+    ca,cb = st.columns(2)
+    with ca:
+        if cd.get("rewards"):
+            df = _cdf(cd,["ema_rewards","rewards"],n); df.columns=["EMA","Raw"]
+            st.markdown("**Reward History**"); st.line_chart(df,height=170,use_container_width=True)
+        if cd.get("losses"):
+            df = pd.DataFrame({"Loss":list(cd["losses"])[-n*3:]})
+            st.markdown("**Training Loss**"); st.line_chart(df,height=150,use_container_width=True)
+        if cd.get("successes"):
+            succ = list(cd["successes"])[-n:]; wn = min(20,len(succ))
+            roll = [sum(succ[max(0,i-wn):i+1])/min(i+1,wn) for i in range(len(succ))]
+            st.markdown(f"**Rolling Win Rate (w={wn})**")
+            st.line_chart(pd.DataFrame({"Win Rate":roll}),height=140,use_container_width=True)
+    with cb:
+        if ss.bellman_hist:
+            df = pd.DataFrame({"Bellman Residual":list(ss.bellman_hist)[-n*3:]})
+            st.markdown("**Bellman Residual |r+γQ'−Q|**")
+            st.line_chart(df,height=170,use_container_width=True)
+        if cd.get("steps"):
+            df = _cdf(cd,["steps"],n); df.columns=["Steps/Ep"]
+            st.markdown("**Steps per Episode**"); st.line_chart(df,height=150,use_container_width=True)
+        if cd.get("optimality"):
+            df = _cdf(cd,["optimality"],n); df.columns=["Path Efficiency"]
+            st.markdown("**Path Efficiency vs A***")
+            st.line_chart(df,height=140,use_container_width=True)
+
+    st.markdown("---")
+    da,db = st.columns(2)
+    with da:
+        st.markdown('<div class="ph">🧮 VALUE / ADVANTAGE STREAMS</div>', unsafe_allow_html=True)
+        if ss.val_hist and ss.adv_hist:
+            n2 = min(len(ss.val_hist),len(ss.adv_hist),n)
+            df = pd.DataFrame({"V(s)":list(ss.val_hist)[-n2:],
+                                "max A(s,a)":list(ss.adv_hist)[-n2:]})
+            st.line_chart(df,height=160,use_container_width=True)
+            st.caption("V(s): state value stream. max A(s,a): best-action advantage.")
+    with db:
+        st.markdown('<div class="ph">⚡ GRADIENT NORM (‖ΔW₁‖_F)</div>', unsafe_allow_html=True)
+        if ss.gnorm_hist:
+            df = pd.DataFrame({"Grad Norm":list(ss.gnorm_hist)[-n*3:]})
+            st.line_chart(df,height=160,use_container_width=True)
+            st.caption("Frobenius norm of weight update for H1. Spikes = large updates.")
+
+    st.markdown("---")
+    st.markdown('<div class="ph">🔥 EXPLORATION HEATMAP (ASCII)</div>', unsafe_allow_html=True)
+    H,W = ss.env.maze.shape; heat = ss.analytics.get_heatmap(H,W)
+    lvls = " ░▒▓█"; rows = []
+    for r in range(H):
+        row = ""
+        for c in range(W):
+            if ss.env.maze[r,c]==1: row += "██"
+            else:
+                i = min(int(heat[r,c]*(len(lvls)-1)),len(lvls)-1)
+                row += lvls[i]+lvls[i]
+        rows.append(row)
+    st.code('\n'.join(rows),language=None)
+    cov = ss.analytics.heatmap.coverage(H,W,ss.env.maze)
+    st.caption(f"Coverage: **{cov*100:.1f}%** | Legend: ' '=unvisited → █=most visited")
+
+    st.markdown("---")
+    st.markdown('<div class="ph">📈 CURRICULUM WINDOW</div>', unsafe_allow_html=True)
+    cur = ss.brain.curriculum
+    if cur.history:
+        scores = [e["score"] for e in cur.history[-20:]]
+        df = pd.DataFrame({"Score":scores,
+                            "Promote":[cur.promote_thresh]*len(scores),
+                            "Demote":[cur.demote_thresh]*len(scores)})
+        st.line_chart(df,height=160,use_container_width=True)
+        cc1,cc2,cc3 = st.columns(3)
+        cc1.metric("Promotions",cur.promotions)
+        cc2.metric("Demotions", cur.demotions)
+        cc3.metric("Avg Score", f"{cur.avg_score:.3f}")
+    else:
+        st.info("Run episodes to populate curriculum history.")
+
+# ══════════════════════════════════════════════════════════
+# TAB 3 — SOUL MATRIX
+# ══════════════════════════════════════════════════════════
+def _tab_soul():
+    ss = st.session_state; sl = ss.soul.get_status()
+    col_s,col_c = st.columns([1,2],gap="large")
+
+    with col_s:
+        st.markdown('<div class="ph">🌀 IDENTITY CORE</div>', unsafe_allow_html=True)
+        v,a = sl["valence"],sl["arousal"]
+        st.markdown(
+            f'<div style="text-align:center;font-size:2.8rem;">{sl["mood_emoji"]}</div>'
+            f'<div style="text-align:center;color:#a855f7;font-size:.95rem;font-weight:700;">'
+            f'{sl["mood"].upper()}</div>'
+            f'<div style="text-align:center;font-size:.7rem;color:#8b949e;margin:4px 0 10px;">'
+            f'Valence {v:+.3f} · Arousal {a:+.3f} · Intensity {sl["intensity"]:.3f}</div>',
+            unsafe_allow_html=True)
+
+        # Circumplex proxy bar chart
+        va_df = pd.DataFrame({"Value":[max(v,0),max(-v,0),max(a,0),max(-a,0)]},
+                              index=["Valence+","Valence−","Arousal+","Arousal−"])
+        st.bar_chart(va_df,height=110,use_container_width=True)
+
+        st.markdown(
+            f'<div style="margin-top:6px;"><b style="color:#00f5ff;">{sl["stage"]}</b><br>'
+            f'<span style="font-size:.73rem;color:#8b949e;">{sl["stage_desc"]}</span></div>',
+            unsafe_allow_html=True)
+        st.progress(sl["relationship"]/100, text=f"Bond {sl['relationship']}/100")
+
+        st.markdown("---")
+        st.markdown('<div class="ph">🧬 PERSONALITY (OCEAN)</div>', unsafe_allow_html=True)
+        ocean = pd.DataFrame({"Score":[sl["O"],sl["C"],sl["E"],sl["A"],sl["N"]]},
+                              index=["Openness","Conscientiousness","Extraversion",
+                                     "Agreeableness","Neuroticism"])
+        st.bar_chart(ocean,height=155,use_container_width=True)
+        st.caption(f"Active traits: {sl['personality']}")
+
+        # Action preference
+        st.markdown("---")
+        st.markdown('<div class="ph">🎲 ACTION PREFERENCE</div>', unsafe_allow_html=True)
+        total_a = sum(ss.action_counts)+1
+        act_df = pd.DataFrame(
+            {"Frequency":[c/total_a for c in ss.action_counts]},
+            index=ACTIONS)
+        st.bar_chart(act_df,height=110,use_container_width=True)
+        dom = ACTIONS[int(np.argmax(ss.action_counts))]
+        st.caption(f"Dominant action: **{dom}** ({max(ss.action_counts)/total_a*100:.1f}%)")
+
+        st.markdown("---")
+        st.markdown('<div class="ph">🧠 STRONGEST MEMORIES</div>', unsafe_allow_html=True)
+        for m in sl.get("strongest_memories",[]):
+            st.markdown(f'<div class="mc">• {m}</div>', unsafe_allow_html=True)
+
+    with col_c:
+        st.markdown('<div class="ph">💬 COGNITIVE INTERFACE</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="thought">💭 {sl["thought"]}</div>', unsafe_allow_html=True)
+
+        html = '<div class="chat-scroll">'
+        for msg in ss.soul.get_chat_history():
+            if msg["role"]=="user":
+                html += (f'<div class="cu"><b>YOU</b> '
+                         f'<span class="cmeta">intent: {msg.get("intent","?")}</span><br>'
+                         f'{msg["text"]}</div>')
+            else:
+                html += (f'<div class="ca"><b>A.L.I.V.E.</b> '
+                         f'<span class="cmeta">mood: {msg.get("emotion","?")}</span><br>'
+                         f'{msg["text"]}</div>')
+        html += '</div>'
+        st.markdown(html, unsafe_allow_html=True)
+
+        ui = st.chat_input("Speak to A.L.I.V.E. ...")
+        if ui: ss.soul.chat(ui); st.rerun()
+
+        qp = st.columns(4)
+        for col,p in zip(qp,["Hello!","How do you feel?","Are you conscious?","Tell me what you learned."]):
+            if col.button(p,use_container_width=True,key=f"qp_{p[:3]}"): ss.soul.chat(p); st.rerun()
+
+        # Full consciousness log
+        st.markdown("---")
+        st.markdown('<div class="ph">🌊 FULL CONSCIOUSNESS STREAM</div>', unsafe_allow_html=True)
+        stream = ss.soul.consciousness.get_stream()
+        stream_html = ""
+        for i,thought in enumerate(reversed(stream)):
+            alpha = max(0.4, 1.0 - i*0.08)
+            stream_html += (f'<div style="font-size:.76rem;color:rgba(216,180,254,{alpha:.1f});'
+                            f'padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);">'
+                            f'<span style="color:#6e7681;font-size:.65rem;">[t-{i}]</span> {thought}</div>')
+        st.markdown(f'<div style="max-height:180px;overflow-y:auto;">{stream_html}</div>',
                     unsafe_allow_html=True)
-        st.text(ss.analytics.get_session_report())
-        zb=_export_zip()
-        if zb: st.download_button("⬇️ Full ZIP Export",zb,f"alive_ep{ss.episode_count}.zip","application/zip",width='stretch')
-        if st.button("🗑 Clear Episodic Memory",width='stretch'):
+        st.markdown(f"**Memories stored:** {sl['memories_stored']} · **Turns:** {sl['turns']}")
+
+# ══════════════════════════════════════════════════════════
+# TAB 4 — MEMORY PALACE
+# ══════════════════════════════════════════════════════════
+def _tab_memory():
+    ss = st.session_state
+    fs = ss.memory.get_full_status(); ep = fs.get("episodic_stats",{})
+
+    st.markdown('<div class="ph">🏛️ MEMORY PALACE</div>', unsafe_allow_html=True)
+    cm1,cm2 = st.columns(2,gap="large")
+
+    with cm1:
+        st.markdown("**📖 Episodic Memory**")
+        if ep:
+            m1,m2,m3 = st.columns(3)
+            m1.metric("Stored",ep.get("total_stored",0))
+            m2.metric("Success Rate",f'{ep.get("success_rate",0)*100:.1f}%')
+            m3.metric("Landmarks",ep.get("landmarks",0))
+            m4,m5 = st.columns(2)
+            m4.metric("Max Level",ep.get("max_level_reached",1))
+            m5.metric("Avg Efficiency",f'{ep.get("avg_efficiency",0)*100:.1f}%')
+
+        recent = fs.get("episodic_recent",[])
+        if recent:
+            st.markdown("**Recent Episodes**")
+            rows=[{"EP#":e.get("episode_id",""),"L":e.get("curriculum_level",""),
+                   "REWARD":round(e.get("total_reward",0),2),
+                   "WIN":"✅" if e.get("success") else "❌",
+                   "STEPS":e.get("total_steps",""),
+                   "EFF":f'{e.get("efficiency",0)*100:.0f}%',
+                   "ALG":e.get("maze_alg","")} for e in recent]
+            st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+
+        # Episode comparison: best vs worst
+        if ss.best_ep and ss.worst_ep:
+            st.markdown("---")
+            st.markdown("**🏆 Best vs Worst Episode**")
+            cmp_df = pd.DataFrame({
+                "Best":  [ss.best_ep["reward"],  ss.best_ep["steps"],
+                          ss.best_ep["efficiency"], ss.best_ep["level"]],
+                "Worst": [ss.worst_ep["reward"], ss.worst_ep["steps"],
+                          ss.worst_ep["efficiency"],ss.worst_ep["level"]],
+            }, index=["Reward","Steps","Efficiency","Level"])
+            st.dataframe(cmp_df,use_container_width=True)
+
+        st.markdown("**🌟 Landmarks**")
+        for lm in fs.get("landmark_episodes",[])[:4]:
+            cls = "es" if lm.get("success") else "ef"
+            st.markdown(
+                f'<div class="mc {cls}"><b>EP#{lm["episode_id"]}</b> '
+                f'L{lm["curriculum_level"]} — {lm["maze_alg"]}<br>'
+                f'R<code>{lm["total_reward"]}</code> · '
+                f'Eff<code>{lm["efficiency"]:.1%}</code> · '
+                f'{"✅" if lm["success"] else "❌"}</div>',unsafe_allow_html=True)
+
+    with cm2:
+        st.markdown("**🧬 Semantic Memory (World Model)**")
+        facts = fs.get("semantic_facts",[])
+        if facts:
+            rows=[{"FACT":f["key"][:38],"VAL":str(f["value"])[:18],
+                   "CONF":f'{f["confidence"]:.0%}',"SRC":f["source"]} for f in facts[:12]]
+            st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+        else:
+            st.info("No semantic facts yet. Play more episodes.")
+
+        # Semantic summary
+        st.markdown("**World Model Summary**")
+        st.code(ss.memory.semantic.get_summary() or "(empty)", language=None)
+
+        st.markdown("---")
+        st.markdown("**💡 System Insights**")
+        for ins in fs.get("insights",[]): st.markdown(f"• {ins}")
+
+        st.markdown("---")
+        st.markdown("**💾 Storage**")
+        st.markdown(
+            f'<div class="mc">Path <code>{fs["save_path"]}</code><br>'
+            f'Size <code>{fs["save_size_kb"]:.1f} KB</code> · '
+            f'Episodes <code>{fs["total_episodes"]}</code> · '
+            f'Loaded <code>{"YES" if fs["loaded_from_disk"] else "NO"}</code>'
+            f'</div>',unsafe_allow_html=True)
+
+        st.markdown("**📊 Session Report**")
+        st.code(ss.analytics.get_session_report(),language=None)
+        c1,c2 = st.columns(2)
+        if c1.button("📋 Export JSON",use_container_width=True):
+            ex = ss.analytics.export_json()
+            st.download_button("⬇️ Download",ex,"alive_session.json","application/json",key="_jdl")
+        if c2.button("🗑 Clear Memory",use_container_width=True):
             ss.memory.episodic.episodes.clear(); ss.memory.semantic.facts.clear()
             st.toast("Memory cleared."); st.rerun()
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 # TAB 5 — BRAIN AUTOPSY
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 def _tab_brain():
-    bs=ss.brain.get_stats(); bn=ss.brain.online_net
-    total_p=sum(np.prod(getattr(bn,p).shape) for p in
-                ["W1","b1","W2","b2","W3","b3","W_val","b_val","W_adv","b_adv"])
-    left,right=st.columns([3,2],gap="large")
-    with left:
-        st.markdown('<div class="ph">🏗️ NETWORK ARCHITECTURE</div>', unsafe_allow_html=True)
-        st.code(f"""Input  [{ss.brain.state_size}]  — 17-dim state encoding
-   ↓  Leaky ReLU (α=0.01)
-H1    [{bn.W2.shape[0]}]  — He init, Adam (β₁=0.9,β₂=0.999)
-   ↓  Leaky ReLU
-H2    [{bn.W3.shape[0]}]  — gradient clip ±10
-   ↓  Leaky ReLU
-H3    [{bn.W_val.shape[0]}]  — dual heads split
-   ↓ Dueling
-V(s)  [1]    A(s,a)  [{ss.brain.action_size}]
-   ↓
-Q(s,a) = V(s) + A(s,a) − mean(A)  [{ss.brain.action_size} actions]
+    ss = st.session_state; br = ss.brain; bn = br.online_net
+    n = ss.config.get("chart_points",150); cd = ss.analytics.get_chart_data(n)
 
-Parameters  : {total_p:,}
-Optimizer   : Adam  lr={ss.brain.learning_rate:.5f}
-Soft-update : τ={ss.brain.tau}
-PER         : α=0.6, β→1.0 ({ss.brain.memory.beta:.3f} now)
-N-Step      : {ss.brain.n_step.n}
-ICM β       : {ss.brain.curiosity.beta}""", language=None)
+    st.markdown('<div class="ph">🔬 BRAIN AUTOPSY</div>', unsafe_allow_html=True)
+    cb1,cb2 = st.columns([3,2],gap="large")
 
-        st.markdown('<div class="ph">🔬 WEIGHT SAMPLE (H1 col 0-7)</div>', unsafe_allow_html=True)
-        w=bn.W1[:,0:min(8,bn.W1.shape[1])].flatten()[:24]
-        st.bar_chart(pd.DataFrame({"W1 weights":w}),height=130)
+    with cb1:
+        if cd.get("losses"):
+            df = pd.DataFrame({"Loss":list(cd["losses"])[-n*3:]})
+            st.markdown("**Training Loss**"); st.line_chart(df,height=150,use_container_width=True)
+        if cd.get("td_errors"):
+            df = pd.DataFrame({"TD-Error":list(cd["td_errors"])[-n*3:]})
+            st.markdown("**TD-Error**"); st.line_chart(df,height=140,use_container_width=True)
+        if ss.bellman_hist:
+            df = pd.DataFrame({"Bellman Residual":list(ss.bellman_hist)[-n*3:]})
+            st.markdown("**Bellman Residual**"); st.line_chart(df,height=130,use_container_width=True)
+        st.markdown("**W1 Weight Distribution (first 32 neurons)**")
+        st.bar_chart(pd.DataFrame({"W1":bn.W1.flatten()[:32]}),height=100,use_container_width=True)
+        st.markdown("**Advantage Bias b_adv per Action**")
+        adv_df = pd.DataFrame({"Bias":bn.b_adv},index=ACTIONS)
+        st.bar_chart(adv_df,height=90,use_container_width=True)
 
-        st.markdown('<div class="ph">📊 TRAINING DIAGNOSTICS</div>', unsafe_allow_html=True)
-        checks=[
-            ("Buffer filled", len(ss.brain.memory)>=ss.brain.batch_size, f'{len(ss.brain.memory):,}/{ss.brain.batch_size}'),
-            ("Learning started", ss.brain.train_step>0, f'{ss.brain.train_step:,} steps'),
-            ("Epsilon < 0.5",   ss.brain.epsilon<0.5, f'ε={ss.brain.epsilon:.4f}'),
-            ("Positive reward", ss.brain.avg_reward>0, f'{ss.brain.avg_reward:+.3f}'),
-            ("Not regressing",  ss.analytics.tracker.convergence.state!="regressing",
-             ss.analytics.tracker.convergence.state),
-            ("Level > 1",       ss.brain.curriculum.level>1, f'L{ss.brain.curriculum.level}'),
-            ("LR not bottomed", ss.brain.learning_rate>1e-5, f'{ss.brain.learning_rate:.6f}'),
-            ("Success > 0",     ss.analytics.tracker.success_rate>0,
-             f'{ss.analytics.tracker.success_rate*100:.1f}%'),
-        ]
-        dc1,dc2=st.columns(2)
-        for i,(name,ok,detail) in enumerate(checks):
-            col=dc1 if i%2==0 else dc2
-            ico="✅" if ok else "⚠️"; clr="#22c55e" if ok else "#f97316"
-            col.markdown(f'<div style="display:flex;align-items:center;gap:7px;margin:3px 0;font-size:.76rem;">'
-                         f'{ico} <span style="color:#c9d1d9;">{name}</span>'
-                         f'<span style="margin-left:auto;color:{clr};font-size:.67rem;">{detail}</span></div>',
-                         unsafe_allow_html=True)
-    with right:
-        st.markdown('<div class="ph">🎛️ LIVE COUNTERS</div>', unsafe_allow_html=True)
-        st.metric("Train Steps",    f'{bs["train_step"]:,}')
-        st.metric("Buffer Fill",    f'{len(ss.brain.memory):,}/{ss.brain.memory.capacity:,}')
-        st.metric("Buffer β",       f'{ss.brain.memory.beta:.3f}')
-        st.metric("Unique States",  bs["unique_states"])
-        st.metric("ICM Coverage",   bs["unique_states"])
-        st.metric("LR Reductions",  ss.brain.lr_sched.reductions)
-        st.markdown("**Buffer fill**")
-        st.markdown(pb(len(ss.brain.memory)/ss.brain.memory.capacity,"#a855f7"), unsafe_allow_html=True)
-        st.markdown("---")
-        st.markdown('<div class="ph">📡 CAPABILITY RADAR</div>', unsafe_allow_html=True)
-        t=ss.analytics.tracker; cur_lvl=ss.brain.curriculum.level
-        H,W=ss.env.maze.shape
-        cov=ss.analytics.heatmap.coverage(H,W,ss.env.maze)
-        sr=t.success_rate; opt=t.avg_optimality
-        conv_sc={"warming_up":.2,"rapid_learning":.8,"fine_tuning":.7,
-                 "converged":1.,"plateau":.4,"regressing":.0}.get(t.convergence.state,.2)
-        lvl_sc=(cur_lvl-1)/9.; exp_sc=min(cov,1.)
-        vals=[sr,opt,exp_sc,conv_sc,lvl_sc]
-        _show("cap_radar",_build_radar_cap,vals_pct=vals)
+    with cb2:
+        tp = sum(bn.__dict__[p].size
+                 for p in ["W1","b1","W2","b2","W3","b3","W_val","b_val","W_adv","b_adv"]
+                 if p in bn.__dict__ and isinstance(bn.__dict__.get(p),np.ndarray))
+        st.markdown(
+            f'<div class="arch"><b style="color:#00f5ff;">ARCHITECTURE</b><br><br>'
+            f'Input  [{br.state_size}]<br>'
+            f'&#8595; LeakyReLU · Adam · He&#8321;<br>'
+            f'H1     [{bn.W2.shape[0]}]<br>'
+            f'&#8595; LeakyReLU<br>'
+            f'H2     [{bn.W3.shape[0]}]<br>'
+            f'&#8595; LeakyReLU<br>'
+            f'H3     [{bn.W_val.shape[0]}]<br>'
+            f'&#8595; ── Dueling ──<br>'
+            f'V(s)[1]&nbsp;&nbsp;A(s,a)[{br.action_size}]<br>'
+            f'Q = V + A &#8722; &#x0305;A<br><br>'
+            f'<b style="color:#22c55e;">Params: {tp:,}</b><br><br>'
+            f'<span class="badge bc">D3QN</span>'
+            f'<span class="badge bp">PER</span>'
+            f'<span class="badge bo">N&#8315;step={br.n_step.n}</span>'
+            f'<span class="badge bg">ICM</span><br><br>'
+            f'&#964;={br.tau}  &#945;_PER=0.6  clip&#177;10</div>',unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
+        st.markdown("**Replay Buffer (PER)**")
+        buf = len(br.memory)/br.memory.capacity
+        st.progress(buf,text=f"{len(br.memory):,}/{br.memory.capacity:,}")
+        m1,m2 = st.columns(2)
+        m1.metric("PER β",       f"{br.memory.beta:.3f}")
+        m2.metric("Max Priority",f"{br.memory.max_priority:.3f}")
+
+        st.markdown("**Curiosity Module**")
+        m3,m4 = st.columns(2)
+        m3.metric("Unique States",br.curiosity.coverage())
+        m4.metric("ICM β",       br.curiosity.beta)
+
+        st.markdown("**Optimizer**")
+        m5,m6 = st.columns(2)
+        m5.metric("LR",f"{br.learning_rate:.6f}")
+        lr_r = br.lr_sched.reductions if hasattr(br,"lr_sched") else "—"
+        m6.metric("LR Reductions",lr_r)
+
+        st.markdown("**State Vector (17-dim)**")
+        st.dataframe(pd.DataFrame({
+            "Component":["3×3 Vision","Agent r,c","Target r,c",
+                         "Manhattan","Trap dist","Fog cov","Time"],
+            "Dims":[9,2,2,1,1,1,1]
+        }),hide_index=True,use_container_width=True)
+
+# ══════════════════════════════════════════════════════════
 # TAB 6 — EPISODE TIMELINE
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 def _tab_timeline():
-    eps=ss.memory.episodic.episodes[-100:] if ss.memory.episodic.episodes else []
-    st.markdown("### 📅 Episode Timeline (last 100)")
-    if not eps: st.info("No episodes recorded yet."); return
-    df=pd.DataFrame([e.to_dict() for e in eps])
-    # colour success
-    s1,s2,s3,s4=st.columns(4)
-    s1.metric("Win rate",f'{df["success"].mean()*100:.1f}%')
-    s2.metric("Avg reward",f'{df["total_reward"].mean():.2f}')
-    s3.metric("Avg efficiency",f'{df["efficiency"].mean():.2%}')
-    s4.metric("Levels seen",f'{df["curriculum_level"].nunique()}')
-    # episode table
-    # episode table
-    disp=df[["episode_id","curriculum_level","total_reward","success","total_steps","efficiency","maze_alg","tags"]].copy()
-    disp["success"]=disp["success"].map({True:"✅",False:"❌"})
-    disp["efficiency"]=disp["efficiency"].apply(lambda x:f"{x:.2%}")
-    disp.columns=["EP#","LVL","REWARD","WIN","STEPS","EFFIC","ALG","TAGS"]
-    st.dataframe(disp, width='stretch', hide_index=True)
-    st.markdown("---")
-    # timeline charts (cached)
-    xs=list(df["episode_id"])
-    _show("tl_reward",_build_lines,
-          xs=xs,
-          traces=[{"y":list(df["total_reward"]),"name":"Reward","c":"#00f5ff","w":1.5}],
-          title="Reward Timeline",height=200)
-    c1,c2=st.columns(2)
-    with c1:
-        _show("tl_steps",_build_lines,
-              xs=xs,
-              traces=[{"y":list(df["total_steps"]),"name":"Steps","c":"#58a6ff","w":1.2}],
-              title="Steps per Episode",height=180)
-    with c2:
-        _show("tl_eff",_build_lines,
-              xs=xs,
-              traces=[{"y":list(df["efficiency"]),"name":"Efficiency","c":"#22c55e","w":1.2}],
-              title="Path Efficiency vs A*",height=180)
-    st.markdown("---")
-    # Level distribution
-    lvl_counts=df["curriculum_level"].value_counts().sort_index()
-    st.markdown("**Level Distribution**")
-    st.bar_chart(lvl_counts,height=140)
+    ss = st.session_state; episodes = ss.memory.episodic.episodes
+    st.markdown('<div class="ph">📅 EPISODE TIMELINE</div>', unsafe_allow_html=True)
+    if not episodes: st.info("No episodes yet."); return
 
-# ══════════════════════════════════════════════════════════════════════════════
+    n = min(50,len(episodes)); recent = episodes[-n:]
+    wins  = sum(1 for e in recent if e.success)
+    avg_r = np.mean([e.total_reward for e in recent])
+    avg_e = np.mean([e.efficiency   for e in recent])
+    avg_s = np.mean([e.total_steps  for e in recent])
+    s1,s2,s3,s4 = st.columns(4)
+    s1.metric("Win Rate",       f"{wins/n*100:.1f}%")
+    s2.metric("Avg Reward",     f"{avg_r:+.2f}")
+    s3.metric("Avg Efficiency", f"{avg_e*100:.1f}%")
+    s4.metric("Avg Steps",      f"{avg_s:.0f}")
+
+    st.markdown("**Reward & Success timeline**")
+    tl_df = pd.DataFrame({"Reward":[e.total_reward for e in recent],
+                           "Success×10":[10.0 if e.success else -10.0 for e in recent]})
+    st.line_chart(tl_df,height=170,use_container_width=True)
+
+    st.markdown("**Curriculum Level Progression**")
+    lv_df = pd.DataFrame({"Level":[e.curriculum_level for e in recent]})
+    st.line_chart(lv_df,height=110,use_container_width=True)
+
+    # Episode log table
+    st.markdown("**Episode Log (latest 30)**")
+    rows=[{"EP#":e.episode_id,"L":e.curriculum_level,"ALG":e.maze_alg[:5],
+           "MAZE":f"{e.maze_h}x{e.maze_w}","REWARD":round(e.total_reward,2),
+           "WIN":"✅" if e.success else "❌","STEPS":e.total_steps,
+           "EFF%":f"{e.efficiency*100:.0f}","ε":f"{e.epsilon_end:.3f}",
+           "FOG":"🌫" if e.fog_used else "","TRAP":"💀" if e.traps_used else ""}
+          for e in list(reversed(recent))[:30]]
+    st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+
+    # Efficiency histogram
+    st.markdown("**Efficiency Distribution (vs A* optimal)**")
+    effs = [e.efficiency for e in recent]; bins = np.linspace(0,1,11)
+    hist,_ = np.histogram(effs,bins=bins)
+    hist_df = pd.DataFrame({"Count":hist},
+                            index=[f"{bins[i]:.1f}–{bins[i+1]:.1f}" for i in range(len(hist))])
+    st.bar_chart(hist_df,height=130,use_container_width=True)
+
+    # Steps distribution
+    if len(recent) >= 5:
+        st.markdown("**Steps Distribution**")
+        step_vals = [e.total_steps for e in recent]
+        sbins = np.linspace(min(step_vals),max(step_vals)+1,11)
+        shist,_ = np.histogram(step_vals,bins=sbins)
+        shist_df = pd.DataFrame({"Count":shist},
+                                 index=[f"{int(sbins[i])}–{int(sbins[i+1])}" for i in range(len(shist))])
+        st.bar_chart(shist_df,height=120,use_container_width=True)
+
+# ══════════════════════════════════════════════════════════
 # TAB 7 — BENCHMARK
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
 def _tab_benchmark():
-    st.markdown("### 🏆 Benchmark & Capability Analysis")
-    t=ss.analytics.tracker; cur_lvl=ss.brain.curriculum.level
-    H,W=ss.env.maze.shape
-    cov=ss.analytics.heatmap.coverage(H,W,ss.env.maze)
-    sr=t.success_rate; opt=t.avg_optimality; conv_st=t.convergence.state
-    conv_sc={"warming_up":.2,"rapid_learning":.8,"fine_tuning":.7,
-             "converged":1.,"plateau":.4,"regressing":.0}.get(conv_st,.2)
-    lvl_sc=(cur_lvl-1)/9.
-    success_score=sr*40; opt_score=opt*25; explore_score=min(cov,1.)*15
-    conv_score=conv_sc*10; level_score=lvl_sc*10
-    total=success_score+opt_score+explore_score+conv_score+level_score
-    cap_color="#22c55e" if total>70 else ("#f97316" if total>40 else "#ef4444")
+    ss = st.session_state; br = ss.brain; an = ss.analytics
+    live = an.get_live_stats(); env_st = ss.env.get_stats(); cur = br.curriculum.get_stats()
 
-    # Big score display
-    st.markdown(f'<div style="text-align:center;padding:1.2rem 0;">'
-                f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:3.5rem;'
-                f'font-weight:700;color:{cap_color};line-height:1;">{total:.1f}</div>'
-                f'<div style="color:#8b949e;font-size:.8rem;letter-spacing:.15em;">CAPABILITY SCORE / 100</div></div>',
+    st.markdown('<div class="ph">🏆 BENCHMARK, DIAGNOSTICS & CONVERGENCE SCIENCE</div>',
                 unsafe_allow_html=True)
 
-    # Score breakdown
-    components=[
-        ("Success Rate (×40)",  success_score,  40, "#22c55e", f'{sr*100:.1f}%'),
-        ("Path Efficiency (×25)",opt_score,     25, "#00f5ff", f'{opt*100:.1f}%'),
-        ("Exploration (×15)",   explore_score,  15, "#a855f7", f'{cov*100:.1f}%'),
-        ("Convergence (×10)",   conv_score,     10, "#58a6ff", conv_st),
-        ("Curriculum (×10)",    level_score,    10, "#f97316", f'L{cur_lvl}/10'),
+    # ── Capability breakdown ──────────────────────────────
+    sr  = an.tracker.success_rate; opt = an.tracker.avg_optimality
+    H,W = ss.env.maze.shape; cov = an.heatmap.coverage(H,W,ss.env.maze)
+    c_st = an.tracker.convergence.state; lvl = cur["level"]
+    s_sc = sr*40; o_sc = opt*25; e_sc = min(cov,1.0)*15
+    cv_sc = {"warming_up":2,"rapid_learning":8,"fine_tuning":7,
+              "converged":10,"plateau":4,"regressing":0}.get(c_st,0.0)
+    lv_sc = ((lvl-1)/9.0)*10
+    total = float(np.clip(s_sc+o_sc+e_sc+cv_sc+lv_sc,0,100))
+
+    comp_df = pd.DataFrame({"Score":[s_sc,o_sc,e_sc,cv_sc,lv_sc]},
+                            index=["Success (40)","Efficiency (25)","Exploration (15)",
+                                   "Convergence (10)","Curriculum (10)"])
+    st.bar_chart(comp_df,height=190,use_container_width=True)
+    st.markdown(
+        f'<div style="text-align:center;font-size:2.1rem;color:#00f5ff;'
+        f'font-family:JetBrains Mono,monospace;font-weight:700;margin:8px 0;">'
+        f'{total:.1f} / 100 &nbsp; CAPABILITY SCORE</div>',unsafe_allow_html=True)
+    st.progress(total/100)
+
+    # ── Convergence hypothesis test ───────────────────────
+    st.markdown("---")
+    st.markdown('<div class="ph">🔬 LEARNING HYPOTHESIS TEST</div>', unsafe_allow_html=True)
+    rewards = [e["reward"] for e in list(ss.ep_log)[-30:]] if ss.ep_log else []
+    if len(rewards) >= 6:
+        slope, pval = _ttest_slope(rewards)
+        significant = pval < 0.05; positive = slope > 0
+        if significant and positive:
+            css = "hyp-yes"
+            verdict = (f"✅ LEARNING CONFIRMED (p={pval:.4f} < 0.05) — "
+                       f"Slope={slope:+.4f} reward/episode. "
+                       f"Reject H₀: gradient is statistically positive.")
+        elif significant and not positive:
+            css = "hyp-no"
+            verdict = (f"⚠️ REGRESSION DETECTED (p={pval:.4f} < 0.05) — "
+                       f"Slope={slope:+.4f}. Policy degrading. "
+                       f"Check LR, buffer, or curriculum level.")
+        else:
+            css = "hyp-unk"
+            verdict = (f"❓ INCONCLUSIVE (p={pval:.4f} ≥ 0.05) — "
+                       f"Slope={slope:+.4f}. Insufficient evidence. "
+                       f"Run more episodes or reduce variance.")
+        st.markdown(f'<div class="{css}">{verdict}</div>', unsafe_allow_html=True)
+        # Reward trend chart
+        df_h = pd.DataFrame({"Reward":rewards})
+        trend_line = [rewards[0]+slope*i for i in range(len(rewards))]
+        df_h["Trend"] = trend_line
+        st.line_chart(df_h,height=130,use_container_width=True)
+    else:
+        st.info("Need ≥6 episodes for hypothesis test. Run the simulation.")
+
+    # ── LR Sensitivity gauge ──────────────────────────────
+    st.markdown("---")
+    st.markdown('<div class="ph">📐 HYPERPARAMETER STABILITY ANALYSIS</div>',
+                unsafe_allow_html=True)
+    cfg = ss.config
+    checks = [
+        ("γ × max_Q instability",   cfg["gamma"] > 0.99 and br.avg_td_error > 2.0, "γ close to 1 with high TD-error can diverge."),
+        ("LR × batch gradient noise",cfg["lr"] > 0.003 and cfg["batch_size"] < 64, "High LR + small batch = noisy gradients."),
+        ("ε-floor reached",          br.epsilon <= cfg["epsilon_min"]*1.05,        "Fully exploiting. Increasing exploration may help if stuck."),
+        ("Buffer underflow",          len(br.memory) < cfg["batch_size"]*4,         "Buffer too small relative to batch. Increase buffer or reduce batch."),
+        ("PER β near 1",              br.memory.beta > 0.85,                        "IS weights near uniform. PER correction nearly disabled."),
+        ("N-step > horizon",          cfg["n_steps"] > max(3, ss.env.max_steps//20),"N-step too long for maze horizon. Bias accumulates."),
+        ("τ too large",               cfg["tau"] > 0.02,                            "Soft update too aggressive. Target net tracks online too fast."),
+        ("Curiosity dominating",      ss.intr_hist and sum(list(ss.intr_hist)[-20:]) > abs(sum(list(ss.extr_hist)[-20:])), "Intrinsic reward exceeding extrinsic. Consider reducing ICM β."),
     ]
-    for name,score,mx,clr,detail in components:
-        frac=score/mx if mx>0 else 0
-        st.markdown(f'<div style="margin:6px 0;">'
-                    f'<div style="display:flex;justify-content:space-between;font-size:.76rem;margin-bottom:2px;">'
-                    f'<span style="color:#c9d1d9;">{name}</span>'
-                    f'<span style="color:{clr};">{score:.1f} / {mx} &nbsp; <i>{detail}</i></span></div>'
-                    f'{pb(frac,clr)}</div>', unsafe_allow_html=True)
+    hc1,hc2 = st.columns(2)
+    for i,(name,warn,desc) in enumerate(checks):
+        col = hc1 if i%2==0 else hc2
+        icon = "⚠️" if warn else "✅"; color = "#f97316" if warn else "#22c55e"
+        col.markdown(
+            f'<div style="display:flex;flex-direction:column;gap:2px;'
+            f'margin:4px 0;padding:6px 8px;background:rgba(255,255,255,.02);'
+            f'border-radius:6px;border-left:3px solid {color};">'
+            f'<div style="display:flex;gap:6px;font-size:.77rem;">'
+            f'<span>{icon}</span><span style="color:#c9d1d9;font-weight:600;">{name}</span></div>'
+            f'<div style="font-size:.67rem;color:#6e7681;padding-left:18px;">{desc}</div>'
+            f'</div>', unsafe_allow_html=True)
+
+    # ── System diagnostics ────────────────────────────────
     st.markdown("---")
-    _show("bm_radar",_build_radar_cap,vals_pct=[sr,opt,cov,conv_sc,lvl_sc])
+    st.markdown('<div class="ph">🩺 SYSTEM DIAGNOSTICS</div>', unsafe_allow_html=True)
+    diag = [
+        ("Buffer filled",       len(br.memory)>=br.batch_size,   f"{len(br.memory):,}/{br.batch_size}"),
+        ("Training active",     br.train_step>0,                  f"{br.train_step:,} steps"),
+        ("Epsilon < 0.5",       br.epsilon<0.5,                   f"ε={br.epsilon:.4f}"),
+        ("Success > 0%",        an.tracker.success_rate>0,        f"{an.tracker.success_rate*100:.1f}%"),
+        ("Avg reward > 0",      an.tracker.avg_reward>0,          f"{an.tracker.avg_reward:+.3f}"),
+        ("Not regressing",      c_st!="regressing",               c_st),
+        ("Level > 1",           br.curriculum.level>1,            f"L{br.curriculum.level}"),
+        ("LR viable",           br.learning_rate>1e-5,            f"{br.learning_rate:.6f}"),
+        ("Episodic memory OK",  len(ss.memory.episodic.episodes)>0,f"{len(ss.memory.episodic.episodes)} eps"),
+        ("Curiosity active",    br.curiosity.coverage()>10,       f"{br.curiosity.coverage()} states"),
+        ("Bellman stable",      (not ss.bellman_hist or list(ss.bellman_hist)[-1]<20.0),
+                                f"{list(ss.bellman_hist)[-1]:.2f}" if ss.bellman_hist else "n/a"),
+        ("Entropy in range",    (not ss.entropy_hist or 0.1<list(ss.entropy_hist)[-1]<math.log(4)+0.1),
+                                f"{list(ss.entropy_hist)[-1]:.3f}" if ss.entropy_hist else "n/a"),
+    ]
+    dc1,dc2 = st.columns(2)
+    for i,(name,ok,detail) in enumerate(diag):
+        col = dc1 if i%2==0 else dc2; icon="✅" if ok else "⚠️"; c="#22c55e" if ok else "#f97316"
+        col.markdown(
+            f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:.76rem;">'
+            f'<span>{icon}</span><span style="color:#c9d1d9;">{name}</span>'
+            f'<span style="margin-left:auto;color:{c};font-size:.67rem;">{detail}</span>'
+            f'</div>',unsafe_allow_html=True)
+
+    # ── Environment stats ─────────────────────────────────
     st.markdown("---")
-    # Environment diagnostics
     st.markdown('<div class="ph">🌐 ENVIRONMENT DIAGNOSTICS</div>', unsafe_allow_html=True)
-    es=ss.env.get_stats(); rd=ss.env.get_render_data()
-    e1,e2,e3,e4=st.columns(4)
-    e1.metric("Maze Size", es["maze_size"])
-    e2.metric("Algorithm",rd["algorithm"].upper())
-    e3.metric("Passable Cells",int((ss.env.maze==0).sum()))
-    e4.metric("A* Optimal",es["astar_optimal"])
-    e5,e6,e7,e8=st.columns(4)
-    e5.metric("Traps",es["traps"]); e6.metric("Portals",len(rd["portals_a"]))
-    e7.metric("Fog",  "On" if rd["use_fog"] else "Off"); e8.metric("Coverage",f'{cov*100:.1f}%')
+    e1,e2,e3,e4 = st.columns(4)
+    e1.metric("Maze",      f'{env_st["maze_h"]}×{env_st["maze_w"]}')
+    e2.metric("Algorithm", env_st["algorithm"].upper())
+    e3.metric("A* Optimal",env_st["astar_optimal"])
+    e4.metric("Cells Vis.",env_st["cells_visited"])
+    e5,e6,e7,e8 = st.columns(4)
+    e5.metric("Traps",    env_st["traps"]); e6.metric("Portals",env_st["portals"])
+    e7.metric("Fog",      "Yes" if env_st["fog"] else "No")
+    e8.metric("Fog Cover",f'{env_st["fog_coverage"]*100:.1f}%')
+
+    # ── Export ────────────────────────────────────────────
     st.markdown("---")
     st.markdown('<div class="ph">📤 SESSION EXPORT</div>', unsafe_allow_html=True)
-    xc1,xc2=st.columns(2)
-    with xc1:
-        st.markdown("**Session Report**")
-        st.code(ss.analytics.get_session_report(), language=None)
-    with xc2:
+    ex1,ex2 = st.columns(2)
+    with ex1:
+        st.markdown("**Session Report**"); st.code(an.get_session_report(),language=None)
+    with ex2:
         st.markdown("**JSON Preview**")
-        j=ss.analytics.export_json()
-        st.code(j[:1500]+("\n...[truncated]" if len(j)>1500 else ""), language="json")
-    zb=_export_zip()
-    if zb: st.download_button("⬇️ Full ZIP Checkpoint",zb,
-        f"ALIVE_ep{ss.episode_count}_L{ss.brain.curriculum.level}.zip","application/zip",width='stretch')
+        js = an.export_json()
+        st.code(js[:1400]+("\n...[truncated]" if len(js)>1400 else ""),language="json")
+    if st.button("⬇️ Build & Download Full ZIP Checkpoint",use_container_width=True):
+        zb = _make_zip()
+        if zb:
+            st.download_button("⬇️ Download ZIP",data=zb,
+                file_name=f"ALIVE_NEXUS_v4_ep{ss.episode_count}_L{br.curriculum.level}.zip",
+                mime="application/zip",use_container_width=True,key="_bzdl")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════
+# TAB 8 — RESEARCH LAB
+# ══════════════════════════════════════════════════════════
+def _tab_research():
+    ss = st.session_state; br = ss.brain; cfg = ss.config
+
+    st.markdown('<div class="ph">🔭 THEORETICAL RESEARCH LABORATORY</div>',
+                unsafe_allow_html=True)
+
+    r1,r2 = st.columns([3,2],gap="large")
+
+    with r1:
+        st.markdown("### Core Objectives & Bellman Equations")
+        st.markdown("""<div class="eq">
+<b>DQN Training Objective (MSE over TD targets):</b><br>
+<em>L(θ) = 𝔼[(y − Q(s,a;θ))²]</em><br><br>
+<b>Double DQN target (decoupled selection/evaluation):</b><br>
+<em>y = r + γ · Q(s', argmax_a Q(s',a;θ); θ⁻)</em><br><br>
+<b>Dueling decomposition (Wang et al., 2016):</b><br>
+<em>Q(s,a;θ) = V(s;θ_v) + A(s,a;θ_a) − (1/|A|)Σ A(s,a';θ_a)</em><br><br>
+<b>Prioritized experience replay (Schaul et al., 2015):</b><br>
+<em>P(i) = |δᵢ|^α / Σⱼ |δⱼ|^α</em><br>
+<em>wᵢ = (N · P(i))^(−β) / max_j wⱼ</em><br><br>
+<b>N-step return (Sutton, 1988):</b><br>
+<em>G_t^n = Σ_{k=0}^{n-1} γᵏ rₜ₊ₖ + γⁿ max_a Q(sₜ₊ₙ, a)</em><br><br>
+<b>Intrinsic curiosity (count-based proxy):</b><br>
+<em>rᵢ(s) = β / √N(s)</em> &nbsp; where N(s) = visit count of state s
+</div>""", unsafe_allow_html=True)
+
+        st.markdown("### Adam Optimiser (Kingma & Ba, 2014)")
+        st.markdown("""<div class="eq">
+<em>m_t = β₁ m_{t-1} + (1−β₁) g_t</em><br>
+<em>v_t = β₂ v_{t-1} + (1−β₂) g_t²</em><br>
+<em>m̂_t = m_t/(1−β₁ᵗ) &nbsp;&nbsp; v̂_t = v_t/(1−β₂ᵗ)</em><br>
+<em>θ_t = θ_{t-1} − α · m̂_t / (√v̂_t + ε)</em><br><br>
+<u>Hypers</u>: β₁=0.9  β₂=0.999  ε=1×10⁻⁸  α=<b>{lr:.4f}</b>
+</div>""".format(lr=cfg["lr"]), unsafe_allow_html=True)
+
+        st.markdown("### Curriculum Learning (ZPD Theory)")
+        st.markdown("""<div class="eq">
+Zone of Proximal Development (Vygotsky, 1978 — adapted for RL):<br><br>
+<em>Level ↑ if: (1/W) Σ score_i ≥ θ_promote</em><br>
+<em>Level ↓ if: (1/W) Σ score_i ≤ θ_demote</em><br><br>
+where <em>score_i = 0.5·success_i + 0.5·efficiency_i</em><br>
+and W = sliding window size<br><br>
+<u>Current</u>: θ_promote=<b>0.72</b>  θ_demote=<b>0.25</b>  W=<b>20</b>
+</div>""", unsafe_allow_html=True)
+
+        st.markdown("### Policy Entropy (Exploration Measure)")
+        st.markdown("""<div class="eq">
+<em>H(π(·|s)) = −Σ_a π(a|s) log π(a|s)</em><br><br>
+where <em>π(a|s) = softmax(Q(s,a)/T)_a</em>  (T=1 here)<br><br>
+H=0 → fully deterministic (exploitation)<br>
+H=log|A|=<b>{:.3f}</b> nats → uniform (max exploration)<br><br>
+<u>Current H(π)</u>: <b>{:.3f}</b> nats &nbsp;→&nbsp;
+Exploitation ratio: <b>{:.0f}%</b>
+</div>""".format(math.log(ACTION_SIZE),
+                 list(ss.entropy_hist)[-1] if ss.entropy_hist else 0.0,
+                 (1-(list(ss.entropy_hist)[-1]/math.log(ACTION_SIZE)) if ss.entropy_hist else 0)*100),
+                   unsafe_allow_html=True)
+
+        st.markdown("### Convergence Conditions (Watkins & Dayan, 1992)")
+        st.markdown("""<div class="eq">
+Q-learning converges to Q* iff:<br>
+1. All (s,a) pairs visited infinitely often<br>
+2. Σ_t α_t = ∞ &nbsp;(learning rate not summable)<br>
+3. Σ_t α_t² < ∞ &nbsp;(learning rate square-summable)<br>
+4. Rewards are bounded: |r| ≤ R_max<br><br>
+With function approximation (DQN), convergence is <em>not</em> guaranteed<br>
+in general — but empirically robust with Double DQN + target network.
+</div>""", unsafe_allow_html=True)
+
+    with r2:
+        st.markdown("### Live Parameter Report")
+        br_st = br.get_stats()
+        params = {
+            "γ (discount)":     cfg["gamma"],
+            "ε (current)":      round(br.epsilon, 4),
+            "ε_min":            cfg["epsilon_min"],
+            "ε_decay / step":   cfg["epsilon_decay"],
+            "α (learning rate)":br.learning_rate,
+            "τ (soft-update)":  cfg["tau"],
+            "β_PER (IS)":       round(br.memory.beta, 4),
+            "n (N-step)":       cfg["n_steps"],
+            "Batch size":       cfg["batch_size"],
+            "Buffer capacity":  f"{cfg['buffer_size']:,}",
+            "ICM β":            cfg["icm_beta"],
+            "H(π) entropy":     round(list(ss.entropy_hist)[-1],4) if ss.entropy_hist else "n/a",
+            "H_max":            round(math.log(ACTION_SIZE),4),
+            "Train steps":      br_st["train_step"],
+            "Total env steps":  ss.global_step,
+            "Episodes":         ss.episode_count,
+            "Curriculum level": br.curriculum.level,
+        }
+        st.dataframe(pd.DataFrame({"Value":[str(v) for v in params.values()]},
+                                  index=params.keys()),
+                     use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### Key References")
+        refs = [
+            ("Mnih et al., 2015", "Human-level control through deep RL. Nature 518."),
+            ("van Hasselt et al., 2016", "Double DQN. AAAI."),
+            ("Wang et al., 2016", "Dueling network architectures. ICML."),
+            ("Schaul et al., 2015", "Prioritized experience replay. ICLR."),
+            ("Sutton & Barto, 2018", "Reinforcement Learning: An Introduction, 2nd ed."),
+            ("Kingma & Ba, 2014", "Adam: A method for stochastic optimization. ICLR."),
+            ("Bellemare et al., 2016", "Unifying count-based exploration. NeurIPS."),
+            ("Wilson et al., 2019", "Uniform spanning trees (Wilson's algorithm). STOC."),
+            ("Portelas et al., 2020", "Automatic curriculum learning. JMLR."),
+            ("Russell's Circumplex","2D valence-arousal emotion model, 1980."),
+        ]
+        for auth,desc in refs:
+            st.markdown(f'<div class="cite"><b>{auth}</b><br>{desc}</div>',
+                        unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### Theoretical Bounds")
+        st.markdown("""<div class="eq">
+<b>Max Q-value bound</b> (finite horizon T, max reward R):<br>
+<em>|Q*(s,a)| ≤ R_max · (1−γ^T)/(1−γ)</em><br><br>
+<b>Optimal policy:</b><br>
+<em>π*(s) = argmax_a Q*(s,a)</em><br><br>
+<b>Value function contraction</b> (γ < 1):<br>
+<em>‖T Q₁ − T Q₂‖∞ ≤ γ‖Q₁ − Q₂‖∞</em><br><br>
+<b>Sample complexity (PAC bound, Strehl et al.):</b><br>
+<em>O(|S||A| · (1/(1−γ))³ · ε⁻² · log(1/δ))</em>
+</div>""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════
+# ENTRY POINT
+# ══════════════════════════════════════════════════════════
 def _main():
-    # ── Global header ────────────────────────────────────────────────
-    h1,h2,h3=st.columns([4,3,2])
-    with h1:
-        st.markdown('<div class="nt">🧬 A.L.I.V.E. NEXUS</div>'
-                    '<div style="font-size:.65rem;color:#6e7681;letter-spacing:.06em;margin-top:1px;">'
-                    'Adaptive Learning Intelligence &amp; Virtual Evolution — v3.1</div>',
-                    unsafe_allow_html=True)
-    with h2:
-        lv=ss.analytics.get_live_stats(); sl=ss.soul.get_status()
-        st.markdown(f'<div style="text-align:center;font-size:.71rem;line-height:2.1;padding-top:7px;">'
-                    f'<span class="bd bc">EP {ss.episode_count}</span>'
-                    f'<span class="bd bg">✓ {lv["success_rate"]:.1f}%</span>'
-                    f'<span class="bd bp">L{ss.brain.curriculum.level}</span>'
-                    f'<span class="bd bo">ε {ss.brain.epsilon:.4f}</span>'
-                    f'<span style="font-size:1.1rem;vertical-align:middle;margin-left:4px;">{sl["mood_emoji"]}</span>'
-                    f'</div>', unsafe_allow_html=True)
-    with h3:
-        lbl="⏸ PAUSE" if ss.auto_mode else "▶ AUTO RUN"
-        if st.button(lbl, width='stretch', key="hdr_toggle"):
-            ss.auto_mode = not ss.auto_mode
-        if st.button("⏭ STEP ×1", width='stretch', key="hdr_step"):
-            process_step(); st.rerun()
-    st.markdown("---")
-
+    ss = st.session_state
+    _header()
     _sidebar()
 
-    tabs=st.tabs(["🗺️ Mission Control","📊 Analytics Lab","🧠 Soul Matrix",
-                  "🗄️ Memory Palace","🔬 Brain Autopsy","📅 Timeline","🏆 Benchmark"])
+    tabs = st.tabs([
+        "🗺️ Mission Control",
+        "📊 Analytics Lab",
+        "🧠 Soul Matrix",
+        "🗄️ Memory Palace",
+        "🔬 Brain Autopsy",
+        "📅 Episode Timeline",
+        "🏆 Benchmark",
+        "🔭 Research Lab",
+    ])
     with tabs[0]: _tab_mission()
     with tabs[1]: _tab_analytics()
     with tabs[2]: _tab_soul()
@@ -968,13 +1482,13 @@ def _main():
     with tabs[4]: _tab_brain()
     with tabs[5]: _tab_timeline()
     with tabs[6]: _tab_benchmark()
+    with tabs[7]: _tab_research()
 
-    # ── Auto-run: execute AFTER tabs so UI renders first ─────────────
     if ss.auto_mode:
-        spf=ss.config.get("steps_per_frame",1)
-        for _ in range(spf): process_step()
-        delay=ss.config.get("sim_speed",0.03)
-        if delay>0: time.sleep(delay)
+        for _ in range(ss.config.get("steps_per_frame",1)):
+            process_step()
+        delay = ss.config.get("sim_speed",0.04)
+        if delay > 0: time.sleep(delay)
         st.rerun()
 
 _main()
