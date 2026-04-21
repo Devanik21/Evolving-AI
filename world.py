@@ -347,7 +347,7 @@ class MazeEnvironment:
       • Normalized distance to nearest trap
       • Fog coverage
       • Time pressure (steps / max_steps)
-    Total state size: 9 + 2 + 2 + 1 + 1 + 1 + 1 = 17
+    Total state size: 9 + 2 + 2 + 1 + 1 + 1 + 1 + 1 = 18
     """
     STATE_SIZE  = 17
     ACTION_SIZE = 4  # up, down, left, right
@@ -362,6 +362,7 @@ class MazeEnvironment:
         self.use_dynamic = cfg.get('dynamic',     False)
         self.use_portals = cfg.get('portals',     False)
         self.max_steps   = cfg.get('max_steps',   self.maze_h * self.maze_w * 4)
+        self.energy = 100.0
 
         self.maze:   Optional[np.ndarray] = None
         self.fog:    Optional[FogOfWar]   = None
@@ -389,6 +390,7 @@ class MazeEnvironment:
 
     # ----------------------------------------------------------
     def reset(self, config: Dict = None, seed: int = None) -> np.ndarray:
+        self.energy = 100.0
         if config:
             self.maze_h      = config.get('maze_h',     self.maze_h)
             self.maze_w      = config.get('maze_w',     self.maze_w)
@@ -589,7 +591,8 @@ class MazeEnvironment:
         # 6. Time pressure
         time_pressure = self.step_count / max(self.max_steps, 1)
 
-        state = vision + pos + tpos + [dist, trap_dist, fog_cov, time_pressure]
+        energy_norm = getattr(self, 'energy', 100.0) / 100.0
+        state = vision + pos + tpos + [dist, trap_dist, fog_cov, time_pressure, energy_norm]
         return np.array(state, dtype=np.float32)
 
     # ----------------------------------------------------------
