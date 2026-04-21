@@ -366,7 +366,7 @@ def process_step():
 
     # ── Scientific instrumentation (pre-step) ──────────────
     bn  = ss.brain.online_net
-    qv, _ = bn.forward(state, training=False)
+    qv = bn.forward(state, training=False)
     q   = qv[0]                                 # shape (4,)
     prb = _softmax(q)
     ent = _entropy(prb)
@@ -383,7 +383,7 @@ def process_step():
     ns, reward, done, info = ss.env.step(action)
 
     # Bellman residual
-    qns, _ = bn.forward(ns, training=False)
+    qns = bn.forward(ns, training=False)
     br_res = abs(reward + ss.brain.gamma*(1-float(done))*float(qns[0].max()) - q[action])
     ss.bellman_hist.append(float(br_res))
 
