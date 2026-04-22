@@ -1451,8 +1451,11 @@ def _tab_benchmark():
         ("γ × max_Q instability",   cfg["gamma"] > 0.99 and br.avg_td_error > 2.0, "γ close to 1 with high TD-error can diverge."),
         ("LR × batch gradient noise",cfg["lr"] > 0.003 and cfg["batch_size"] < 64, "High LR + small batch = noisy gradients."),
         ("ε-floor reached",          br.epsilon <= cfg["epsilon_min"]*1.05,        "Fully exploiting. Increasing exploration may help if stuck."),
-        ("Buffer underflow",          len(br.memory) < cfg["batch_size"]*4,         "Buffer too small relative to batch. Increase buffer or reduce batch."),
-        ("PER β near 1",              br.memory.beta > 0.85,                        "IS weights near uniform. PER correction nearly disabled."),
+        #("Buffer underflow",          len(br.memory) < cfg["batch_size"]*4,         "Buffer too small relative to batch. Increase buffer or reduce batch."),
+        #("PER β near 1",              br.memory.beta > 0.85,                        "IS weights near uniform. PER correction nearly disabled."),
+        # --- PASTE THESE TWO NEW TABULAR LINES INSTEAD ---
+        ("Buffer underflow",          len(br.model) < cfg.get("batch_size", 64)*4,  "Model memory too small relative to batch."),
+        ("PER β near 1",              False,                                        "PER disabled for 0% cheat Tabular."),
         ("N-step > horizon",          cfg["n_steps"] > max(3, ss.env.max_steps//20),"N-step too long for maze horizon. Bias accumulates."),
         ("τ too large",               cfg["tau"] > 0.02,                            "Soft update too aggressive. Target net tracks online too fast."),
         ("Curiosity dominating",      ss.intr_hist and sum(list(ss.intr_hist)[-20:]) > abs(sum(list(ss.extr_hist)[-20:])), "Intrinsic reward exceeding extrinsic. Consider reducing ICM β."),
