@@ -475,7 +475,9 @@ def _load_zip(up) -> bool:
     ss = st.session_state
     try:
         with zipfile.ZipFile(up,"r") as z:
-            with z.open("alive_nexus_v4.json") as f: d = json.load(f)
+            json_files = [n for n in z.namelist() if n.endswith(".json")]
+            if not json_files: raise ValueError("No .json found in archive")
+            with z.open(json_files[0]) as f: d = json.load(f)
         if "brain" in d:
             ss.brain.set_weights(d["brain"]); ss.brain.target_net.copy_from(ss.brain.online_net)
         if "soul" in d:
