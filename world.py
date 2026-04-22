@@ -524,22 +524,18 @@ class MazeEnvironment:
     def _compute_reward(self, moved: bool, old_dist: int, new_dist: int,
                         trap_hit: bool) -> float:
         r = 0.0
-        r -= 0.02  # Base living penalty
-
-        if not moved:
-            r -= 0.1  # Wall bump penalty
-
-        # --- A.L.I.V.E. Intrinsic Motivation Engine (0 Cheats) ---
-        # 1. Epigenetic Curiosity (Dopamine hit for discovering new areas)
+        # --- MazE.py GENIUS MODE ALIGNMENT (0 Cheats) ---
         visit_count = self.visit_grid[self.agent_r, self.agent_c]
-        if visit_count == 1.0:
-            r += 0.5  # Huge dopamine rush for frontier exploration
-        else:
-            # 2. Adaptive Frustration Penalty (Anti-Loitering)
-            # The more times an agent steps on this specific tile, the more agonizing it becomes.
-            # This exponentially scaling pain physically forces the network to abandon dead-ends.
-            frustration = 0.05 * (1.1 ** visit_count)
-            r -= min(frustration, 2.0)
+        
+        # 1. Dynamic Penalty (Anti-Loitering, perfectly mimicking MazE.py)
+        # -0.1 base living penalty, scales linearly with visits
+        dynamic_penalty = -0.1 - (0.001 * visit_count)
+        
+        # 2. Curiosity Bonus (The "Fun" Factor)
+        # kappa = 0.5 as used in MazE.py. We use the same square root decay.
+        intrinsic_reward = (0.5 / np.sqrt(max(1.0, visit_count)))
+        
+        r += dynamic_penalty + intrinsic_reward
 
         if trap_hit:
             r -= 5.0                       # Caught by trap
