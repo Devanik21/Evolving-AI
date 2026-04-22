@@ -246,9 +246,6 @@ class NeuralNet:
         adv = a3 @ self.W_adv + self.b_adv          # (B, A)
         q   = val + (adv - adv.mean(axis=1, keepdims=True))
 
-        # --- A.L.I.V.E. Numerical Shield ---
-        q = np.clip(q, -1_000_000.0, 1_000_000.0)
-
         if training:
             self._cache = dict(x=x, z1=z1, a1=a1, z2=z2, a2=a2, z3=z3, a3=a3, val=val, adv=adv)
         return q
@@ -292,9 +289,7 @@ class NeuralNet:
             self._v[p] = beta2 * self._v[p] + (1 - beta2) * (g ** 2)
             m_hat = self._m[p] / (1 - beta1 ** self._t)
             v_hat = self._v[p] / (1 - beta2 ** self._t)
-            # Apply update and CLAMP weights to ±100 to prevent overflow
-            new_val = getattr(self, p) - lr * m_hat / (np.sqrt(v_hat) + eps)
-            setattr(self, p, np.clip(new_val, -100.0, 100.0))
+            setattr(self, p, getattr(self, p) - lr * m_hat / (np.sqrt(v_hat) + eps))
 
     def copy_from(self, other: 'NeuralNet'):
         for p in self.PARAMS:
@@ -547,7 +542,7 @@ class AgentBrain:
         self.learning_rate   = cfg.get('lr', 0.001)
         self.batch_size      = cfg.get('batch_size', 64)
         self.tau             = cfg.get('tau', 0.005)
-        self.planning_steps  = cfg.get('planning_steps', 25)  # Accelerated Dyna-Q (5x intensity)
+        self.planning_steps  = cfg.get('planning_steps', 5)  # Dyna-Q training multiplier
 
         # Counters & stats
         self.train_step     = 0
@@ -588,10 +583,8 @@ class AgentBrain:
             # Dyna-Q Hallucination / Accelerated Planning
             # Train Multiple batches from memory per real environmental physical step.
             actual_planning_steps = self.planning_steps
-            # Instant Breakthrough: If the agent reached the goal, intensify learning
-            reached = (reward > 20.0) # Goal reward is typically > 25
-            if done and reached:
-                actual_planning_steps *= 5  # 125 planning cycles on success
+            if done and self.episode_reward > 10.0:
+                actual_planning_steps *= 4  # Core breakthrough learning (Super Brain Mode)
                 
             for _ in range(actual_planning_steps):
                 l, t = self._train()
@@ -649,11 +642,7 @@ class AgentBrain:
         # --- Update priorities ---
         self.memory.update_priorities(indices, td_errors.tolist())
 
-        # --- Loss calculation (Huber Loss for stability) ---
-        diff = np.abs(targets - q_pred[np.arange(self.batch_size), actions])
-        huber_loss = np.where(diff <= 1.0, 0.5 * diff**2, diff - 0.5)
-        loss = float(np.mean(huber_loss))
-        
+        loss = float(np.mean((targets - q_pred[np.arange(self.batch_size), actions]) ** 2))
         return loss, float(np.mean(td_errors))
 
     # ----------------------------------------------------------

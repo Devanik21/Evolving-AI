@@ -22,7 +22,7 @@ import random
 from collections import deque
 from typing import Tuple, List, Dict, Optional, Set
 import heapq
-import math
+
 
 # ============================================================
 #  CELL TYPES
@@ -350,10 +350,8 @@ class MazeEnvironment:
       • Time pressure (steps / max_steps)
     Total state size: 9 + 2 + 2 + 1 + 1 + 1 + 1 = 17
     """
-    # --- CONFIG ---
-    STATE_SIZE  = 64
-    ACTION_SIZE = 4
-    ACTIONS     = [0, 1, 2, 3] # UP, DOWN, LEFT, RIGHT
+    STATE_SIZE  = 52
+    ACTION_SIZE = 4  # up, down, left, right
     DELTAS      = [(-1,0),(1,0),(0,-1),(0,1)]
 
     def __init__(self, config: Dict = None):
@@ -379,7 +377,6 @@ class MazeEnvironment:
         self.step_count = 0
         self.done = False
         self.last_action = -1
-        self.last_icm_bonus = 0.0 # [NEW] Curiosity signal for 64-D state
 
         # Metrics
         self.episode_reward    = 0.0
@@ -463,7 +460,6 @@ class MazeEnvironment:
         if self.done:
             return self._encode_state(), 0.0, True, {}
 
-        prev_action = self.last_action
         self.last_action = action
         dr, dc = self.DELTAS[action]
         nr, nc = self.agent_r + dr, self.agent_c + dc
@@ -504,7 +500,7 @@ class MazeEnvironment:
             self.fog.update(self.agent_r, self.agent_c)
 
         # --- Compute reward ---
-        reward = self._compute_reward(action, prev_action, moved, old_dist, new_dist, trap_hit)
+        reward = self._compute_reward(moved, old_dist, new_dist, trap_hit)
         self.episode_reward += reward
 
         # --- Check termination ---
@@ -528,37 +524,21 @@ class MazeEnvironment:
         return self._encode_state(), reward, self.done, info
 
     # ----------------------------------------------------------
-    def _compute_reward(self, action: int, prev_action: int, moved: bool, 
-                        old_dist: int, new_dist: int, trap_hit: bool) -> float:
+    def _compute_reward(self, moved: bool, old_dist: int, new_dist: int,
+                        trap_hit: bool) -> float:
         r = 0.0
         # --- MazE.py GENIUS MODE ALIGNMENT (0 Cheats) ---
         visit_count = self.visit_grid[self.agent_r, self.agent_c]
         
-        # 1. Dynamic Penalty (Anti-Loitering)
+        # 1. Dynamic Penalty (Anti-Loitering, perfectly mimicking MazE.py)
+        # -0.1 base living penalty, scales linearly with visits
         dynamic_penalty = -0.1 - (0.001 * visit_count)
         
-        # 2. Curiosity Bonus
+        # 2. Curiosity Bonus (The "Fun" Factor)
+        # kappa = 0.5 as used in MazE.py. We use the same square root decay.
         intrinsic_reward = (0.5 / np.sqrt(max(1.0, visit_count)))
         
-        # 3. Compass Reward (Potential-Based Shaping)
-        compass_reward = 0.0
-        if moved:
-            if new_dist < old_dist:
-                compass_reward = 0.18
-            else:
-                compass_reward = -0.08
-        
-        # 4. Inertia Reward (Anti-Oscillation)
-        # Prevents "vibration" by rewarding consistency and penalizing 180-turns
-        inertia_reward = 0.0
-        if moved and prev_action != -1:
-            opposite_map = {0: 1, 1: 0, 2: 3, 3: 2}
-            if action == prev_action:
-                inertia_reward = 0.06  # Small bonus for physical momentum
-            elif action == opposite_map.get(prev_action, -1):
-                inertia_reward = -0.15 # Heavy penalty for immediate reversal
-        
-        r += dynamic_penalty + intrinsic_reward + compass_reward + inertia_reward
+        r += dynamic_penalty + intrinsic_reward
 
         if trap_hit:
             r -= 5.0                       # Caught by trap
@@ -640,54 +620,8 @@ class MazeEnvironment:
         # 8. Kinesthetic Momentum (4-D One-Hot)
         momentum = [1.0 if self.last_action == a else 0.0 for a in range(4)]
 
-        # --- [NEW 64-D Dimensions] ---
-        
-        # 1. Cardinal Wall Radar (4-D)
-        # Raycasts N, S, E, W for nearest wall up to 10 tiles away
-        wall_radar = []
-        for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-            d = 1.0
-            for i in range(1, 11):
-                nr, nc = r + dr*i, c + dc*i
-                if not (0 <= nr < H and 0 <= nc < W) or self.maze[nr, nc] == 1:
-                    d = i / 10.0
-                    break
-            wall_radar.append(d)
-
-        # 2. Scent Gradients (4-D)
-        # Difference in visit counts between current tile and cardinal neighbors
-        scent_grads = []
-        curr_p = np.log1p(self.visit_grid[r, c])
-        for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < H and 0 <= nc < W:
-                neigh_p = np.log1p(self.visit_grid[nr, nc])
-                # Normalize delta to [-1, 1] range
-                scent_grads.append(float(np.clip(neigh_p - curr_p, -1.0, 1.0)))
-            else:
-                scent_grads.append(0.0)
-
-        # 3. Target Beacon (2-D)
-        # Unit vector pointing precisely toward the target
-        dr_t, dc_t = self.target_r - r, self.target_c - c
-        mag = math.sqrt(dr_t**2 + dc_t**2) + 1e-9
-        beacon = [dr_t / mag, dc_t / mag]
-
-        # 4. Local Flux (1-D)
-        # Measure of how 'unbalanced' the local pheromone distribution is
-        flux = [float(np.std(pheromones))]
-
-        # 5. Curiosity Signal (1-D)
-        # The agent's own internal sense of curiosity/motivation
-        curiosity = [float(np.clip(self.last_icm_bonus, 0.0, 1.0))]
-
-        # Total Construction:
-        # 25(vision) + 13(pheromones) + 10(telemetry) + 4(momentum) 
-        # + 4(radar) + 4(scent) + 2(beacon) + 1(flux) + 1(curiosity) = 64-D
-        state = (vision + pheromones + pos + tpos + dir_vec + 
-                 [dist, trap_dist, fog_cov, time_pressure] + 
-                 momentum + wall_radar + scent_grads + beacon + flux + curiosity)
-        
+        # Total: 25(vision) + 13(pheromones) + 2(pos) + 2(tpos) + 2(dir) + 1(dist) + 1(trap) + 1(fog) + 1(time) + 4(mom) = 52
+        state = vision + pheromones + pos + tpos + dir_vec + [dist, trap_dist, fog_cov, time_pressure] + momentum
         return np.array(state, dtype=np.float32)
 
     # ----------------------------------------------------------
@@ -773,30 +707,6 @@ class MazeEnvironment:
         return data
 
     # ----------------------------------------------------------
-    def get_difficulty(self) -> float:
-        """Calculates a heuristic difficulty score from 1.0 to 10.0."""
-        # 1. Size Complexity (up to 3.0)
-        size_factor = (self.maze_h * self.maze_w) / 400.0 # Normalized against 20x20
-        score = size_factor * 3.0
-        
-        # 2. Algorithm Logic (up to 2.5)
-        alg_map = {'backtracker': 0.8, 'prim': 1.5, 'wilson': 2.5, 'eller': 1.8}
-        score += alg_map.get(self.algorithm, 1.0)
-        
-        # 3. Environmental Hazards (up to 3.0)
-        if self.use_fog:     score += 1.0
-        if self.use_dynamic: score += 1.5
-        if self.use_portals: score += 0.5
-        
-        # 4. Path Winding (up to 1.5)
-        # Ratio of A* path to Manhattan distance indicates 'snakiness'
-        manhattan = abs(self.agent_r - self.target_r) + abs(self.agent_c - self.target_c)
-        winding = self.astar_optimal / max(manhattan, 1)
-        score += min(winding * 0.3, 1.5)
-        
-        return float(np.clip(score, 1.0, 10.0))
-
-    # ----------------------------------------------------------
     def get_stats(self) -> Dict:
         return {
             'step_count':    self.step_count,
@@ -814,7 +724,6 @@ class MazeEnvironment:
             'portals':       len(self.portals),
             'fog':           self.use_fog,
             'fog_coverage':  round(self.fog.coverage(), 3) if self.use_fog else 1.0,
-            'difficulty':    round(self.get_difficulty(), 1)
         }
 
     # ----------------------------------------------------------
