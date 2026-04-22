@@ -289,7 +289,9 @@ class NeuralNet:
             self._v[p] = beta2 * self._v[p] + (1 - beta2) * (g ** 2)
             m_hat = self._m[p] / (1 - beta1 ** self._t)
             v_hat = self._v[p] / (1 - beta2 ** self._t)
-            setattr(self, p, getattr(self, p) - lr * m_hat / (np.sqrt(v_hat) + eps))
+            # Apply update and CLAMP weights to ±100 to prevent overflow
+            new_val = getattr(self, p) - lr * m_hat / (np.sqrt(v_hat) + eps)
+            setattr(self, p, np.clip(new_val, -100.0, 100.0))
 
     def copy_from(self, other: 'NeuralNet'):
         for p in self.PARAMS:

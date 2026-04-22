@@ -557,10 +557,10 @@ def _telemetry_strip():
         (f"{live['success_rate']:.1f}%","Win Rate", _d(live['success_rate'],50)),
         (f"{br.epsilon:.4f}",     "Epsilon",   _d(-br.epsilon,-0.5)),
         (f"{br.avg_reward:+.2f}", "Avg Reward",_d(br.avg_reward,0)),
-        (f"{br.avg_loss:.4f}",    "Avg Loss",  _d(-br.avg_loss,-0.01)),
+        (_fmt_val(br.avg_loss),   "Avg Loss",  _d(-br.avg_loss,-0.01)),
         (f"{ent:.3f}",            "H(π) Entropy",f'<span class="tel-nt">nats</span>'),
         (f"L{br.curriculum.level}/10","Curriculum",_d(br.curriculum.level,1)),
-        (f"{cap:.1f}",            "Capability",_d(cap,50)),
+        (_fmt_val(cap),           "Capability",_d(cap,50)),
         (f"{ss.global_step:,}",   "Total Steps",f'<span class="tel-nt">env</span>'),
         (f"{sl['mood_emoji']} {sl['mood'][:6]}","Soul Mood",
          f'<span class="tel-nt">V={sl["valence"]:+.2f}</span>'),
@@ -657,11 +657,12 @@ def _header():
     ss = st.session_state
     h1,h2,h3 = st.columns([4,3,2])
     with h1:
-        st.markdown(
-            '<div class="ntitle">🧬 A.L.I.V.E. NEXUS</div>'
-            '<div style="font-size:.65rem;color:#6e7681;letter-spacing:.06em;margin-top:2px;">'
-            'Adaptive Learning Intelligence &amp; Virtual Evolution — Event Horizon Edition v4.0</div>',
-            unsafe_allow_html=True)
+        pass # Removed ntitle block per user request for clean look
+        # st.markdown(
+        #     '<div class="ntitle">🧬 A.L.I.V.E. NEXUS</div>'
+        #     '<div style="font-size:.65rem;color:#6e7681;letter-spacing:.06em;margin-top:2px;">'
+        #     'Adaptive Learning Intelligence &amp; Virtual Evolution — Event Horizon Edition v4.0</div>',
+        #     unsafe_allow_html=True)
     with h2:
         live = ss.analytics.get_live_stats(); sl = ss.soul.get_status()
         st.markdown(
