@@ -566,7 +566,12 @@ class MazeEnvironment:
             for dc in [-2, -1, 0, 1, 2]:
                 nr, nc = r + dr, c + dc
                 if 0 <= nr < H and 0 <= nc < W:
-                    cell = float(self.maze[nr, nc])
+                    # Check if this cell is the objective
+                    if (nr, nc) == (self.target_r, self.target_c):
+                        cell = -1.0  # Distinct 'Goal' visual signal
+                    else:
+                        cell = float(self.maze[nr, nc])
+                    
                     if self.use_fog and not self.fog.visible[nr, nc]:
                         cell = 0.5   # Unknown cell encoded as 0.5
                 else:

@@ -536,7 +536,7 @@ class AgentBrain:
 
         # Hyper-parameters
         self.gamma           = cfg.get('gamma', 0.99)
-        self.epsilon         = 1.0
+        self.epsilon         = 0.7
         self.epsilon_min     = cfg.get('epsilon_min', 0.05)
         self.epsilon_decay   = cfg.get('epsilon_decay', 0.995)
         self.learning_rate   = cfg.get('lr', 0.001)
