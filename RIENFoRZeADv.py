@@ -191,7 +191,7 @@ pre code{font-size:.69rem!important;}
 section[data-testid="stSidebar"]{background:rgba(8,8,24,.97);
  border-right:1px solid rgba(0,245,255,.08);}
 div[data-testid="stDecoration"]{display:none;}
-#MainMenu,footer,header{visibility:hidden;}
+
 </style>""", unsafe_allow_html=True)
 
 # ── Backend guard ──────────────────────────────────────────
