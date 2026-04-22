@@ -1263,7 +1263,7 @@ def _tab_brain():
 
         st.markdown("**State Vector (6-dim)**")
         st.dataframe(pd.DataFrame({
-            "Component":["Binary Compass (dr,dc)","Tactile Sensors (UD,LR)","Boredom Meter","Energy"],
+            "Component":["Rel Compass (dr,dc)","Wall Sensors (UD,LR)","Boredom Meter","Energy"],
             "Dims":[2,2,1,1]
         }),hide_index=True,width='stretch')
 
