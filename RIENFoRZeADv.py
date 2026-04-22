@@ -6,7 +6,7 @@ Project: The Event Horizon
 
 SCIENTIFIC INSTRUMENTATION  (new in v4.0)
   ✦ Live Q(s,a) vector bar-chart — real-time policy readout   
-  ✦ Policy entropy H(π) timeline — quantifies exploration
+  ✦ Policy entropy H(π) timeline — quantifies exploration                
   ✦ Reward decomposition: intrinsic (ICM) vs extrinsic
   ✦ V(s) / max-Advantage streaming — dueling head analysis
   ✦ Gradient-norm proxy tracker — training stability signal
