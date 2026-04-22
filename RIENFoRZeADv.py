@@ -266,6 +266,16 @@ def _ttest_slope(values: List[float]) -> Tuple[float, float]:
     p  = 2.0 * (1.0 - min(abs(t) / (abs(t) + math.sqrt(df)), 0.9999))
     return slope, float(np.clip(p, 0, 1))
 
+def _fmt_val(val: float) -> str:
+    """Human-readable metric formatter."""
+    abs_v = abs(val)
+    if abs_v == 0: return "0.00"
+    if abs_v >= 1e9:  return f"{val/1e9:.2f}B"
+    if abs_v >= 1e6:  return f"{val/1e6:.2f}M"
+    if abs_v >= 1e3:  return f"{val/1e3:.2f}K"
+    if abs_v < 1e-3: return f"{val:.2e}"
+    return f"{val:.3f}"
+
 # ── Session init ───────────────────────────────────────────
 def _init():
     ss  = st.session_state
@@ -732,9 +742,9 @@ def _tab_mission():
     with right:
         st.markdown('<div class="ph">🧠 BRAIN SNAPSHOT</div>', unsafe_allow_html=True)
         m1,m2,m3 = st.columns(3)
-        m1.metric("Avg Reward",  f"{br['avg_reward']:+.2f}")
-        m2.metric("Avg Loss",    f"{br['avg_loss']:.4f}")
-        m3.metric("TD-Error",    f"{br['avg_td_error']:.3f}")
+        m1.metric("Avg Reward",  _fmt_val(br['avg_reward']))
+        m2.metric("Avg Loss",    _fmt_val(br['avg_loss']))
+        m3.metric("TD-Error",    _fmt_val(br['avg_td_error']))
         m4,m5,m6 = st.columns(3)
         m4.metric("Train Steps", f"{br['train_step']:,}")
         m5.metric("Memory",      f"{br['memory_size']:,}")

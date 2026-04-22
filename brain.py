@@ -642,7 +642,11 @@ class AgentBrain:
         # --- Update priorities ---
         self.memory.update_priorities(indices, td_errors.tolist())
 
-        loss = float(np.mean((targets - q_pred[np.arange(self.batch_size), actions]) ** 2))
+        # --- Loss calculation (Huber Loss for stability) ---
+        diff = np.abs(targets - q_pred[np.arange(self.batch_size), actions])
+        huber_loss = np.where(diff <= 1.0, 0.5 * diff**2, diff - 0.5)
+        loss = float(np.mean(huber_loss))
+        
         return loss, float(np.mean(td_errors))
 
     # ----------------------------------------------------------
