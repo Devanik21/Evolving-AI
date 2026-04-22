@@ -523,34 +523,37 @@ class MazeEnvironment:
     # ----------------------------------------------------------
     def _compute_reward(self, moved: bool, old_dist: int, new_dist: int,
                         trap_hit: bool) -> float:
-        H, W = self.maze.shape
-        max_dist = H + W
-
         r = 0.0
-        r -= 0.01                          # Time penalty
-        r += 0.5 * (old_dist - new_dist) / max_dist  # Shaping: closer = better
+        r -= 0.02  # Base living penalty
 
         if not moved:
-            r -= 0.05                      # Wall bump penalty
+            r -= 0.1  # Wall bump penalty
 
-        # Exploration bonus
-        is_new = self.visit_grid[self.agent_r, self.agent_c] == 1.0
-        if is_new:
-            r += 0.03
+        # --- A.L.I.V.E. Intrinsic Motivation Engine (0 Cheats) ---
+        # 1. Epigenetic Curiosity (Dopamine hit for discovering new areas)
+        visit_count = self.visit_grid[self.agent_r, self.agent_c]
+        if visit_count == 1.0:
+            r += 0.5  # Huge dopamine rush for frontier exploration
+        else:
+            # 2. Adaptive Frustration Penalty (Anti-Loitering)
+            # The more times an agent steps on this specific tile, the more agonizing it becomes.
+            # This exponentially scaling pain physically forces the network to abandon dead-ends.
+            frustration = 0.05 * (1.1 ** visit_count)
+            r -= min(frustration, 2.0)
 
         if trap_hit:
             r -= 5.0                       # Caught by trap
 
         reached = (self.agent_r == self.target_r and self.agent_c == self.target_c)
         if reached:
-            # Efficiency bonus: optimal path gets +10, slower gets less
+            # Massive Jackpot to anchor the RL policy, scaling with path efficiency
             efficiency = max(0.0, self.astar_optimal / max(self.step_count, 1))
-            r += 10.0 + 5.0 * efficiency
+            r += 25.0 + 10.0 * efficiency
 
         if self.step_count >= self.max_steps and not reached:
-            r -= 1.0                       # Timeout penalty
+            r -= 2.0                       # Timeout penalty
 
-        return float(np.clip(r, -10.0, 15.0))
+        return float(np.clip(r, -20.0, 40.0))
 
     # ----------------------------------------------------------
     def _encode_state(self) -> np.ndarray:
