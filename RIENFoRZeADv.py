@@ -1,6 +1,6 @@
 """
 app.py ── A.L.I.V.E. NEXUS  v4.0  "Event Horizon Edition"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Co-Investigator: Xylia | Collaborator: Nik
 Project: The Event Horizon  
 
@@ -1263,7 +1263,7 @@ def _tab_brain():
 
         st.markdown("**State Vector (6-dim)**")
         st.dataframe(pd.DataFrame({
-            "Component":["Agent Pos (r,c)","Target Pos (r,c)","Energy","Time"],
+            "Component":["Rel Compass (dr,dc)","Wall Sensors (UD,LR)","Boredom Meter","Energy"],
             "Dims":[2,2,1,1]
         }),hide_index=True,width='stretch')
 

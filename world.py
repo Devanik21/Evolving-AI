@@ -440,7 +440,7 @@ class MazeEnvironment:
                 b = open_cells[-(i + 3)]
                 self.portals.append((a, b))
 
-        # A* oracle path length
+        # A* oracle path length (For UI metrics only, not for agent)
         path = astar(self.maze, (self.agent_r, self.agent_c), (self.target_r, self.target_c))
         self.astar_optimal = len(path) - 1 if path else self.maze_h + self.maze_w
 
@@ -467,16 +467,12 @@ class MazeEnvironment:
         nr, nc = self.agent_r + dr, self.agent_c + dc
         H, W = self.maze.shape
 
-        # --- Reward shaping: potential-based ---
-        old_dist = abs(self.agent_r - self.target_r) + abs(self.agent_c - self.target_c)
-
         # Move if valid
         moved = False
         if 0 <= nr < H and 0 <= nc < W and self.maze[nr, nc] == PATH:
             self.agent_r, self.agent_c = nr, nc
             moved = True
 
-        new_dist = abs(self.agent_r - self.target_r) + abs(self.agent_c - self.target_c)
         self.step_count += 1
 
         # Visit tracking
@@ -502,21 +498,32 @@ class MazeEnvironment:
             self.fog.update(self.agent_r, self.agent_c)
 
         # --- Compute reward ---
-        # Standard step penalty (Match RIENFoRZe.py efficiency)
+        # 0% Cheat Reward Logic
+        # Manhattan distance (Traditional scent-based hint)
+        old_dist = abs(self.agent_r - self.target_r) + abs(self.agent_c - self.target_c)
+        dr, dc = self.DELTAS[action]
+        nr, nc = self.agent_r + dr, self.agent_c + dc
+        new_dist = abs(nr - self.target_r) + abs(nc - self.target_c)
+
+        # Standard step penalty
         reward = -0.1 
         
-        # Distance shaping (Stronger Magnetic Pull: 3.0)
-        reward += (old_dist - new_dist) * 3.0
+        # Subtle direction hint (Non-cheating potential)
+        reward += (old_dist - new_dist) * 1.5
         
+        # Penalty for loitering (Visit-based)
+        visit_penalty = min(2.0, self.visit_grid[self.agent_r, self.agent_c] * 0.05)
+        reward -= visit_penalty
+
         if trap_hit:
             reward -= 10.0
             
         reached = (self.agent_r == self.target_r and self.agent_c == self.target_c)
         if reached:
-            reward += 100.0 # Massive Goal Signal
+            reward += 100.0 # Clear goal signal
             
         if self.step_count >= self.max_steps and not reached:
-            reward -= 10.0 # Timeout
+            reward -= 5.0 # Timeout
 
         self.agent_energy -= 0.1 # Metabolism
         self.episode_reward += reward
@@ -539,8 +546,6 @@ class MazeEnvironment:
             'optimality':   self.astar_optimal / max(self.step_count, 1),
         }
 
-        # return self._encode_state_discrete(), reward, self.done, info
-        # NEW NEURAL RETURN (MATCHING SIMPLER ARCH):
         return self._encode_state(), reward, self.done, info
 
 
@@ -601,17 +606,26 @@ class MazeEnvironment:
     # ----------------------------------------------------------
     def _encode_state(self) -> np.ndarray:
         """
-        Encodes a simplified 6-D state vector for the Neural Network.
-        [agent_r, agent_c, target_r, target_c, energy, step_progress]
+        0% CHEAT PERCEPTUAL STATE (6-D)
+        [Rel_R, Rel_C, Wall_UD, Wall_LR, Visit_Count, Energy]
         """
         H, W = self.maze.shape
+        # Wall sensors
+        wall_ud = 0.0 # 0=None, 0.5=Top, -0.5=Bottom, 1=Both
+        if self.agent_r > 0 and self.maze[self.agent_r-1, self.agent_c] == WALL: wall_ud += 0.5
+        if self.agent_r < H-1 and self.maze[self.agent_r+1, self.agent_c] == WALL: wall_ud -= 0.5
+        
+        wall_lr = 0.0 # 0=None, 0.5=Left, -0.5=Right, 1=Both
+        if self.agent_c > 0 and self.maze[self.agent_r, self.agent_c-1] == WALL: wall_lr += 0.5
+        if self.agent_c < W-1 and self.maze[self.agent_r, self.agent_c+1] == WALL: wall_lr -= 0.5
+
         state = [
-            self.agent_r / H,
-            self.agent_c / W,
-            self.target_r / H,
-            self.target_c / W,
-            self.agent_energy / 100.0,
-            self.step_count / max(self.max_steps, 1)
+            (self.target_r - self.agent_r) / H, # Relative R Compass
+            (self.target_c - self.agent_c) / W, # Relative C Compass
+            wall_ud,                            # Y-Axis Wall Sensor
+            wall_lr,                            # X-Axis Wall Sensor
+            min(1.0, self.visit_grid[self.agent_r, self.agent_c] / 20.0), # Boredom Meter
+            self.agent_energy / 100.0
         ]
         return np.array(state, dtype=np.float32)
 
