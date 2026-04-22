@@ -66,6 +66,8 @@ st.markdown("""
 .stApp{background:radial-gradient(ellipse at 20% 10%,#0d0d2e 0%,#080818 55%,#0a1a18 100%);
  color:#c9d1d9;font-family:'Segoe UI',sans-serif;}
 * {box-sizing:border-box;}
+header[data-testid="stHeader"] {background:transparent !important;}
+.main .block-container {padding-top:2.5rem !important;}
 
 /* ─ shimmer title ─ */
 .ntitle{font-family:'JetBrains Mono',monospace;font-size:1.85rem;font-weight:700;
@@ -265,6 +267,17 @@ def _ttest_slope(values: List[float]) -> Tuple[float, float]:
     df = n - 2
     p  = 2.0 * (1.0 - min(abs(t) / (abs(t) + math.sqrt(df)), 0.9999))
     return slope, float(np.clip(p, 0, 1))
+
+def _fmt_val(val: float) -> str:
+    """Human-readable metric formatter."""
+    abs_v = abs(val)
+    if abs_v == 0: return "0.00"
+    if abs_v >= 1e12: return f"{val/1e12:.2f}T"
+    if abs_v >= 1e9:  return f"{val/1e9:.2f}B"
+    if abs_v >= 1e6:  return f"{val/1e6:.2f}M"
+    if abs_v >= 1e3:  return f"{val/1e3:.2f}K"
+    if abs_v < 1e-3: return f"{val:.2e}"
+    return f"{val:.3f}"
 
 # ── Session init ───────────────────────────────────────────
 def _init():
@@ -547,10 +560,10 @@ def _telemetry_strip():
         (f"{live['success_rate']:.1f}%","Win Rate", _d(live['success_rate'],50)),
         (f"{br.epsilon:.4f}",     "Epsilon",   _d(-br.epsilon,-0.5)),
         (f"{br.avg_reward:+.2f}", "Avg Reward",_d(br.avg_reward,0)),
-        (f"{br.avg_loss:.4f}",    "Avg Loss",  _d(-br.avg_loss,-0.01)),
+        (_fmt_val(br.avg_loss),   "Avg Loss",  _d(-br.avg_loss,-0.01)),
         (f"{ent:.3f}",            "H(π) Entropy",f'<span class="tel-nt">nats</span>'),
         (f"L{br.curriculum.level}/10","Curriculum",_d(br.curriculum.level,1)),
-        (f"{cap:.1f}",            "Capability",_d(cap,50)),
+        (_fmt_val(cap),           "Capability",_d(cap,50)),
         (f"{ss.global_step:,}",   "Total Steps",f'<span class="tel-nt">env</span>'),
         (f"{sl['mood_emoji']} {sl['mood'][:6]}","Soul Mood",
          f'<span class="tel-nt">V={sl["valence"]:+.2f}</span>'),
@@ -732,9 +745,9 @@ def _tab_mission():
     with right:
         st.markdown('<div class="ph">🧠 BRAIN SNAPSHOT</div>', unsafe_allow_html=True)
         m1,m2,m3 = st.columns(3)
-        m1.metric("Avg Reward",  f"{br['avg_reward']:+.2f}")
-        m2.metric("Avg Loss",    f"{br['avg_loss']:.4f}")
-        m3.metric("TD-Error",    f"{br['avg_td_error']:.3f}")
+        m1.metric("Avg Reward",  _fmt_val(br['avg_reward']))
+        m2.metric("Avg Loss",    _fmt_val(br['avg_loss']))
+        m3.metric("TD-Error",    _fmt_val(br['avg_td_error']))
         m4,m5,m6 = st.columns(3)
         m4.metric("Train Steps", f"{br['train_step']:,}")
         m5.metric("Memory",      f"{br['memory_size']:,}")

@@ -246,6 +246,9 @@ class NeuralNet:
         adv = a3 @ self.W_adv + self.b_adv          # (B, A)
         q   = val + (adv - adv.mean(axis=1, keepdims=True))
 
+        # --- A.L.I.V.E. Numerical Shield ---
+        q = np.clip(q, -1_000_000.0, 1_000_000.0)
+
         if training:
             self._cache = dict(x=x, z1=z1, a1=a1, z2=z2, a2=a2, z3=z3, a3=a3, val=val, adv=adv)
         return q
@@ -289,7 +292,9 @@ class NeuralNet:
             self._v[p] = beta2 * self._v[p] + (1 - beta2) * (g ** 2)
             m_hat = self._m[p] / (1 - beta1 ** self._t)
             v_hat = self._v[p] / (1 - beta2 ** self._t)
-            setattr(self, p, getattr(self, p) - lr * m_hat / (np.sqrt(v_hat) + eps))
+            # Apply update and CLAMP weights to ±100 to prevent overflow
+            new_val = getattr(self, p) - lr * m_hat / (np.sqrt(v_hat) + eps)
+            setattr(self, p, np.clip(new_val, -100.0, 100.0))
 
     def copy_from(self, other: 'NeuralNet'):
         for p in self.PARAMS:
@@ -642,7 +647,11 @@ class AgentBrain:
         # --- Update priorities ---
         self.memory.update_priorities(indices, td_errors.tolist())
 
-        loss = float(np.mean((targets - q_pred[np.arange(self.batch_size), actions]) ** 2))
+        # --- Loss calculation (Huber Loss for stability) ---
+        diff = np.abs(targets - q_pred[np.arange(self.batch_size), actions])
+        huber_loss = np.where(diff <= 1.0, 0.5 * diff**2, diff - 0.5)
+        loss = float(np.mean(huber_loss))
+        
         return loss, float(np.mean(td_errors))
 
     # ----------------------------------------------------------
