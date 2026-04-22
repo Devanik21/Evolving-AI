@@ -367,7 +367,7 @@ class IntrinsicCuriosity:
     where N(s) is the visit count of state s.
     Encourages the agent to explore novel regions of state space.
     """
-    def __init__(self, bins: int = 16, beta: float = 0.05):
+    def __init__(self, bins: int = 16, beta: float = 0.01):
         self.bins = bins
         self.beta = beta
         self.counts: Dict[tuple, int] = {}
@@ -541,7 +541,7 @@ class AgentBrain:
         # self.q_table = {} 
         # self.model = {}
 
-        self.curiosity = IntrinsicCuriosity(beta=cfg.get('icm_beta', 0.05))
+        self.curiosity = IntrinsicCuriosity(beta=cfg.get('icm_beta', 0.01))
         self.curriculum = CurriculumManager()
         self.lr_sched  = LRScheduler(base_lr=cfg.get('lr', 0.1)) # Higher LR for tabular
 

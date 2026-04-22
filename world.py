@@ -502,21 +502,21 @@ class MazeEnvironment:
             self.fog.update(self.agent_r, self.agent_c)
 
         # --- Compute reward ---
-        # Standard step penalty
-        reward = -0.05 
+        # Standard step penalty (Match RIENFoRZe.py efficiency)
+        reward = -0.1 
         
-        # Distance shaping (Match RIENFoRZe.py)
-        reward += (old_dist - new_dist) * 1.5
+        # Distance shaping (Stronger Magnetic Pull: 3.0)
+        reward += (old_dist - new_dist) * 3.0
         
         if trap_hit:
             reward -= 10.0
             
         reached = (self.agent_r == self.target_r and self.agent_c == self.target_c)
         if reached:
-            reward += 50.0 # Clear goal signal
+            reward += 100.0 # Massive Goal Signal
             
         if self.step_count >= self.max_steps and not reached:
-            reward -= 5.0 # Timeout
+            reward -= 10.0 # Timeout
 
         self.agent_energy -= 0.1 # Metabolism
         self.episode_reward += reward
