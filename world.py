@@ -350,7 +350,7 @@ class MazeEnvironment:
       • Time pressure (steps / max_steps)
     Total state size: 9 + 2 + 2 + 1 + 1 + 1 + 1 = 17
     """
-    STATE_SIZE  = 17
+    STATE_SIZE  = 26
     ACTION_SIZE = 4  # up, down, left, right
     DELTAS      = [(-1,0),(1,0),(0,-1),(0,1)]
 
@@ -557,7 +557,7 @@ class MazeEnvironment:
         H, W = self.maze.shape
         r, c = self.agent_r, self.agent_c
 
-        # 1. 9-cell local vision (3x3 centered on agent)
+        # 1. 9-cell local vision (3x3 centered on agent) - Wall Structure
         vision = []
         for dr in [-1, 0, 1]:
             for dc in [-1, 0, 1]:
@@ -570,26 +570,42 @@ class MazeEnvironment:
                     cell = 1.0       # Out of bounds = wall
                 vision.append(cell)
 
-        # 2. Normalized positions
+        # --- A.L.I.V.E. Pheromone Sight Upgrade ---
+        # 2. 9-cell local pheromones (3x3 visit counts)
+        # We normalize this by log1p(x)/5.0 to keep values mostly in [0, 1] range.
+        pheromones = []
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < H and 0 <= nc < W:
+                    # Visit counts are locally normalized to sense "traffic"
+                    v = self.visit_grid[nr, nc]
+                    norm_v = np.log1p(v) / 5.0
+                    pheromones.append(float(norm_v))
+                else:
+                    pheromones.append(1.0) # Walls act as dead pheromone zones
+
+        # 3. Normalized positions
         pos   = [r / H, c / W]
         tpos  = [self.target_r / H, self.target_c / W]
 
-        # 3. Normalized Manhattan distance
+        # 4. Normalized Manhattan distance
         dist = (abs(r - self.target_r) + abs(c - self.target_c)) / (H + W)
 
-        # 4. Distance to nearest trap
+        # 5. Distance to nearest trap
         trap_dist = 1.0
         if self.traps:
             td = min(abs(tr.r - r) + abs(tr.c - c) for tr in self.traps)
             trap_dist = td / (H + W)
 
-        # 5. Fog coverage (exploration completeness)
+        # 6. Fog coverage (exploration completeness)
         fog_cov = self.fog.coverage() if self.use_fog else 1.0
 
-        # 6. Time pressure
+        # 7. Time pressure
         time_pressure = self.step_count / max(self.max_steps, 1)
 
-        state = vision + pos + tpos + [dist, trap_dist, fog_cov, time_pressure]
+        # Total: 9 (vision) + 9 (pheromones) + 2 (pos) + 2 (tpos) + 1 (dist) + 1 (trap) + 1 (fog) + 1 (time) = 26
+        state = vision + pheromones + pos + tpos + [dist, trap_dist, fog_cov, time_pressure]
         return np.array(state, dtype=np.float32)
 
     # ----------------------------------------------------------

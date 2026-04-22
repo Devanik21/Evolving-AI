@@ -306,7 +306,11 @@ class NeuralNet:
     def set_weights(self, d: Dict):
         for p, v in d.items():
             if p in self.PARAMS:
-                setattr(self, p, np.array(v, dtype=np.float64))
+                val = np.array(v, dtype=np.float64)
+                if val.shape == getattr(self, p).shape:
+                    setattr(self, p, val)
+                else:
+                    print(f"[NeuralNet] Skip weight {p}: shape mismatch {val.shape} vs {getattr(self, p).shape}")
 
 
 # ============================================================

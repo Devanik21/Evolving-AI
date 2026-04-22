@@ -2,11 +2,11 @@
 app.py ── A.L.I.V.E. NEXUS  v4.0  "Event Horizon Edition"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Co-Investigator: Xylia | Collaborator: Nik
-Project: The Event Horizon      
+Project: The Event Horizon
 
-SCIENTIFIC INSTRUMENTATION  (new in v4.0)                
+SCIENTIFIC INSTRUMENTATION  (new in v4.0)
   ✦ Live Q(s,a) vector bar-chart — real-time policy readout   
-  ✦ Policy entropy H(π) timeline — quantifies exploration 
+  ✦ Policy entropy H(π) timeline — quantifies exploration
   ✦ Reward decomposition: intrinsic (ICM) vs extrinsic
   ✦ V(s) / max-Advantage streaming — dueling head analysis
   ✦ Gradient-norm proxy tracker — training stability signal
@@ -202,7 +202,7 @@ if not _OK:
 
 # ── Constants ──────────────────────────────────────────────
 SAVE_PATH   = "./alive_nexus_v4.json"
-STATE_SIZE  = 17
+STATE_SIZE  = 26
 ACTION_SIZE = 4
 ACTIONS     = ["↑ UP", "↓ DOWN", "← LEFT", "→ RIGHT"]
 ACTION_CLR  = ["#00f5ff", "#a855f7", "#f97316", "#22c55e"]
