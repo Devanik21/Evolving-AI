@@ -67,7 +67,7 @@ st.markdown("""
  color:#c9d1d9;font-family:'Segoe UI',sans-serif;}
 header {visibility: hidden;}
 .stDeployButton {display:none;}
-#MainMenu {visibility: hidden;}
+
 footer {visibility: hidden;}
 * {box-sizing:border-box;}
 
