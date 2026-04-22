@@ -304,8 +304,8 @@ def _init():
     ss.extr_hist:     deque = deque(maxlen=N)   # extrinsic reward
     ss.val_hist:      deque = deque(maxlen=N)   # V(s) from value head
     ss.adv_hist:      deque = deque(maxlen=N)   # max A(s,a)
-   # ss.gnorm_hist:    deque = deque(maxlen=N)   # gradient-norm proxy (|ΔW1|_F)
-   # ss.bellman_hist:  deque = deque(maxlen=N)   # |r + γ max Q(s') - Q(s,a)|
+    ss.gnorm_hist:    deque = deque(maxlen=N)   # gradient-norm proxy (|ΔW1|_F)
+    ss.bellman_hist:  deque = deque(maxlen=N)   # |r + γ max Q(s') - Q(s,a)|
     ss.action_counts: List  = [0, 0, 0, 0]     # U D L R histogram
     ss.trajectory:    deque = deque(maxlen=30)  # (r,c) recent positions
    # ss.prev_w1:       np.ndarray = ss.brain.online_net.W1.copy()  # for grad proxy
@@ -846,10 +846,14 @@ def _tab_analytics():
             st.markdown(f"**Rolling Win Rate (w={wn})**")
             st.line_chart(pd.DataFrame({"Win Rate":roll}),height=140,width='stretch')
     with cb:
-        if ss.bellman_hist:
-            df = pd.DataFrame({"Bellman Residual":list(ss.bellman_hist)[-n*3:]})
+        # --- Change line 849 from this: ---
+        # if ss.bellman_hist:
+        
+        # --- To this bulletproof version: ---
+        if ss.get("bellman_hist"):
+            df = pd.DataFrame({"Bellman Residual": list(ss.bellman_hist)})
             st.markdown("**Bellman Residual |r+γQ'−Q|**")
-            st.line_chart(df,height=170,width='stretch')
+            st.line_chart(df, height=170, width='stretch')
         if cd.get("steps"):
             df = _cdf(cd,["steps"],n); df.columns=["Steps/Ep"]
             st.markdown("**Steps per Episode**"); st.line_chart(df,height=150,width='stretch')
