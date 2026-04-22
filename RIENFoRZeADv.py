@@ -1486,7 +1486,8 @@ def _tab_benchmark():
     st.markdown("---")
     st.markdown('<div class="ph">🩺 SYSTEM DIAGNOSTICS</div>', unsafe_allow_html=True)
     diag = [
-        ("Buffer filled",       len(br.memory)>=br.batch_size,   f"{len(br.memory):,}/{br.batch_size}"),
+        #("Buffer filled",       len(br.memory)>=br.batch_size,   f"{len(br.memory):,}/{br.batch_size}"),
+        ("Buffer filled",       len(br.model)>=br.batch_size,   f"{len(br.model):,}/{br.batch_size}"),
         ("Training active",     br.train_step>0,                  f"{br.train_step:,} steps"),
         ("Epsilon < 0.5",       br.epsilon<0.5,                   f"ε={br.epsilon:.4f}"),
         ("Success > 0%",        an.tracker.success_rate>0,        f"{an.tracker.success_rate*100:.1f}%"),
