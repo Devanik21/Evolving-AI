@@ -4,7 +4,7 @@ app.py ── A.L.I.V.E. NEXUS  v4.0  "Event Horizon Edition"
 Co-Investigator: Xylia | Collaborator: Nik
 Project: The Event Horizon
 
-SCIENTIFIC INSTRUMENTATION  (new in v4.0)
+SCIENTIFIC INSTRUMENTATION  (new in v4.0)  
   ✦ Live Q(s,a) vector bar-chart — real-time policy readout   
   ✦ Policy entropy H(π) timeline — quantifies exploration
   ✦ Reward decomposition: intrinsic (ICM) vs extrinsic
