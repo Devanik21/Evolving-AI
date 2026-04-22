@@ -246,6 +246,9 @@ class NeuralNet:
         adv = a3 @ self.W_adv + self.b_adv          # (B, A)
         q   = val + (adv - adv.mean(axis=1, keepdims=True))
 
+        # --- A.L.I.V.E. Numerical Shield ---
+        q = np.clip(q, -1_000_000.0, 1_000_000.0)
+
         if training:
             self._cache = dict(x=x, z1=z1, a1=a1, z2=z2, a2=a2, z3=z3, a3=a3, val=val, adv=adv)
         return q
