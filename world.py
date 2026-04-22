@@ -463,6 +463,7 @@ class MazeEnvironment:
         if self.done:
             return self._encode_state(), 0.0, True, {}
 
+        prev_action = self.last_action
         self.last_action = action
         dr, dc = self.DELTAS[action]
         nr, nc = self.agent_r + dr, self.agent_c + dc
@@ -503,7 +504,7 @@ class MazeEnvironment:
             self.fog.update(self.agent_r, self.agent_c)
 
         # --- Compute reward ---
-        reward = self._compute_reward(moved, old_dist, new_dist, trap_hit)
+        reward = self._compute_reward(action, prev_action, moved, old_dist, new_dist, trap_hit)
         self.episode_reward += reward
 
         # --- Check termination ---
@@ -527,28 +528,37 @@ class MazeEnvironment:
         return self._encode_state(), reward, self.done, info
 
     # ----------------------------------------------------------
-    def _compute_reward(self, moved: bool, old_dist: int, new_dist: int,
-                        trap_hit: bool) -> float:
+    def _compute_reward(self, action: int, prev_action: int, moved: bool, 
+                        old_dist: int, new_dist: int, trap_hit: bool) -> float:
         r = 0.0
         # --- MazE.py GENIUS MODE ALIGNMENT (0 Cheats) ---
         visit_count = self.visit_grid[self.agent_r, self.agent_c]
         
-        # 1. Dynamic Penalty (Anti-Loitering, perfectly mimicking MazE.py)
-        # -0.1 base living penalty, scales linearly with visits
+        # 1. Dynamic Penalty (Anti-Loitering)
         dynamic_penalty = -0.1 - (0.001 * visit_count)
         
-        # 2. Curiosity Bonus (The "Fun" Factor)
+        # 2. Curiosity Bonus
         intrinsic_reward = (0.5 / np.sqrt(max(1.0, visit_count)))
         
         # 3. Compass Reward (Potential-Based Shaping)
         compass_reward = 0.0
         if moved:
             if new_dist < old_dist:
-                compass_reward = 0.12  # Reward for getting closer
+                compass_reward = 0.18
             else:
-                compass_reward = -0.08 # Penalty for moving away
+                compass_reward = -0.08
         
-        r += dynamic_penalty + intrinsic_reward + compass_reward
+        # 4. Inertia Reward (Anti-Oscillation)
+        # Prevents "vibration" by rewarding consistency and penalizing 180-turns
+        inertia_reward = 0.0
+        if moved and prev_action != -1:
+            opposite_map = {0: 1, 1: 0, 2: 3, 3: 2}
+            if action == prev_action:
+                inertia_reward = 0.06  # Small bonus for physical momentum
+            elif action == opposite_map.get(prev_action, -1):
+                inertia_reward = -0.15 # Heavy penalty for immediate reversal
+        
+        r += dynamic_penalty + intrinsic_reward + compass_reward + inertia_reward
 
         if trap_hit:
             r -= 5.0                       # Caught by trap
