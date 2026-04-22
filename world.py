@@ -453,8 +453,7 @@ class MazeEnvironment:
         self.visit_grid[self.agent_r, self.agent_c] = 1.0
         self.total_episodes += 1
 
-        # return self._encode_state()
-        return self._encode_state_discrete()
+        return self._encode_state()
 
     # ----------------------------------------------------------
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict]:
@@ -523,11 +522,9 @@ class MazeEnvironment:
             'optimality':   self.astar_optimal / max(self.step_count, 1),
         }
 
-        #return self._encode_state(), reward, self.done, info
-        # OLD CONTINUOUS RETURN:
-        # return self._encode_state(), reward, self.done, info
-        # NEW DISCRETE RETURN:
-        return self._encode_state_discrete(), reward, self.done, info
+        # return self._encode_state_discrete(), reward, self.done, info
+        # NEW NEURAL RETURN (MATCHING SIMPLER ARCH):
+        return self._encode_state(), reward, self.done, info
 
 
     # ----------------------------------------------------------
@@ -586,72 +583,19 @@ class MazeEnvironment:
 
     # ----------------------------------------------------------
     def _encode_state(self) -> np.ndarray:
-        """Encode the current world state as a normalized vector."""
+        """
+        Encodes a simplified 6-D state vector for the Neural Network.
+        [agent_r, agent_c, target_r, target_c, energy, step_progress]
+        """
         H, W = self.maze.shape
-        r, c = self.agent_r, self.agent_c
-
-        # 1. 25-cell High-Res local vision (5x5 centered on agent)
-        vision = []
-        for dr in [-2, -1, 0, 1, 2]:
-            for dc in [-2, -1, 0, 1, 2]:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < H and 0 <= nc < W:
-                    # Check if this cell is the objective
-                    if (nr, nc) == (self.target_r, self.target_c):
-                        cell = -1.0  # Distinct 'Goal' visual signal
-                    else:
-                        cell = float(self.maze[nr, nc])
-                    
-                    if self.use_fog and not self.fog.visible[nr, nc]:
-                        cell = 0.5   # Unknown cell encoded as 0.5
-                else:
-                    cell = 1.0       # Out of bounds = wall
-                vision.append(cell)
-
-        # 2. 13-point Symmetrical Pheromone Diamond
-        # We normalize this by log1p(x)/5.0 to keep values mostly in [0, 1] range.
-        pheromones = []
-        diamond_deltas = [
-            (0,0), (-1,0), (1,0), (0,-1), (0,1), 
-            (-1,-1), (-1,1), (1,-1), (1,1),
-            (-2,0), (2,0), (0,-2), (0,2)
+        state = [
+            self.agent_r / H,
+            self.agent_c / W,
+            self.target_r / H,
+            self.target_c / W,
+            self.agent_energy / 100.0,
+            self.step_count / max(self.max_steps, 1)
         ]
-        for dr, dc in diamond_deltas:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < H and 0 <= nc < W:
-                v = self.visit_grid[nr, nc]
-                norm_v = np.log1p(v) / 5.0
-                pheromones.append(float(norm_v))
-            else:
-                pheromones.append(1.0) # Walls act as dead pheromone zones
-
-        # 3. Global Telemetry (10-D)
-        pos   = [r / H, c / W]
-        tpos  = [self.target_r / H, self.target_c / W]
-        
-        # Directional vector to target
-        dir_vec = [(self.target_r - r) / H, (self.target_c - c) / W]
-
-        # 4. Normalized Manhattan distance
-        dist = (abs(r - self.target_r) + abs(c - self.target_c)) / (H + W)
-
-        # 5. Distance to nearest trap
-        trap_dist = 1.0
-        if self.traps:
-            td = min(abs(tr.r - r) + abs(tr.c - c) for tr in self.traps)
-            trap_dist = td / (H + W)
-
-        # 6. Fog coverage (exploration completeness)
-        fog_cov = self.fog.coverage() if self.use_fog else 1.0
-
-        # 7. Time pressure
-        time_pressure = self.step_count / max(self.max_steps, 1)
-
-        # 8. Kinesthetic Momentum (4-D One-Hot)
-        momentum = [1.0 if self.last_action == a else 0.0 for a in range(4)]
-
-        # Total: 25(vision) + 13(pheromones) + 2(pos) + 2(tpos) + 2(dir) + 1(dist) + 1(trap) + 1(fog) + 1(time) + 4(mom) = 52
-        state = vision + pheromones + pos + tpos + dir_vec + [dist, trap_dist, fog_cov, time_pressure] + momentum
         return np.array(state, dtype=np.float32)
 
     # ----------------------------------------------------------

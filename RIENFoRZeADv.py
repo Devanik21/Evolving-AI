@@ -204,7 +204,7 @@ if not _OK:
 
 # ── Constants ──────────────────────────────────────────────
 SAVE_PATH   = "./alive_nexus_v4.json"
-STATE_SIZE  = 52
+STATE_SIZE  = 6
 ACTION_SIZE = 4
 ACTIONS     = ["↑ UP", "↓ DOWN", "← LEFT", "→ RIGHT"]
 ACTION_CLR  = ["#00f5ff", "#a855f7", "#f97316", "#22c55e"]
@@ -385,29 +385,20 @@ def process_step():
     state  = ss.cur_state
     action = ss.brain.act(state)
 
-    # ---------------------------------------------------------
-    # --- NEW: SAFE TELEMETRY BYPASS FOR TABULAR BRAIN ---
-    if hasattr(ss.brain, 'online_net'):
-        # Old Neural Network Logic (Safe guard)
-        bn  = ss.brain.online_net
-        s_arr = np.array(state) # Ensure array for NeuralNet
-        qv  = bn.forward(s_arr, training=True)   
-        q   = qv[0]                              
-        val_raw = float(q.mean())
-        adv_raw = float(q.max() - q.mean())
-        new_w1 = bn.W1
-        if ss.prev_w1 is not None:
-            gnorm = float(np.linalg.norm(new_w1 - ss.prev_w1, 'fro'))
-        else:
-            gnorm = 0.0
-        ss.prev_w1 = new_w1.copy()
+    # --- NEURAL TELEMETRY (Dueling DQN) ---
+    bn  = ss.brain.online_net
+    qv  = bn.forward(state, training=True)   
+    q   = qv[0]                              
+    val_raw = float(q.mean())
+    adv_raw = float(q.max() - q.mean())
+    
+    # Gradient-norm proxy: Frobenius norm of ΔW1
+    new_w1 = bn.W1
+    if ss.prev_w1 is not None:
+        gnorm = float(np.linalg.norm(new_w1 - ss.prev_w1, 'fro'))
     else:
-        # New Tabular Logic (Feeds safe data to UI graphs)
-        # state is already a tuple (r,c) from world.py
-        q = np.array([ss.brain.q_table.get((state, a), 0.0) for a in range(ACTION_SIZE)])
-        val_raw = float(q.mean())
-        adv_raw = float(q.max() - q.mean())
-        gnorm = 0.0  # Tabular doesn't have gradient norms
+        gnorm = 0.0
+    ss.prev_w1 = new_w1.copy()
     # ---------------------------------------------------------
 
     prb = _softmax(q)
@@ -423,8 +414,9 @@ def process_step():
     # ── Step ───────────────────────────────────────────────
     ns, reward, done, info = ss.env.step(action)
 
-    # Bellman residual (Safe Tabular Calculation)
-    qns_max = max([ss.brain.q_table.get((ns, a), 0.0) for a in range(ACTION_SIZE)])
+    # Bellman residual (Neural Calculation)
+    q_ns = ss.brain.target_net.forward(ns, training=False)[0]
+    qns_max = float(q_ns.max())
     br_res = abs(reward + ss.brain.gamma*(1-float(done))*qns_max - q[action])
     ss.bellman_hist.append(float(br_res))
 
@@ -502,8 +494,9 @@ def _load_zip(up) -> bool:
             json_files = [n for n in z.namelist() if n.endswith(".json")]
             if not json_files: raise ValueError("No .json found in archive")
             with z.open(json_files[0]) as f: d = json.load(f)
-        if "brain" in d:
-            ss.brain.set_weights(d["brain"]); ss.brain.target_net.copy_from(ss.brain.online_net)
+        if "brain" not in ss:
+            ss.brain = AgentBrain(state_size=6, action_size=4) # Simplified: 6-D
+        ss.brain.set_weights(d["brain"]); ss.brain.target_net.copy_from(ss.brain.online_net)
         if "soul" in d:
             p = d["soul"]
             for t in ("O","C","E","A","N"):
