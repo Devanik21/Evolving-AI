@@ -1630,11 +1630,23 @@ def _tab_visualizations():
     """
     ss  = st.session_state
     cfg = ss.config
-    n   = cfg.get("chart_points", 150)
-    cd  = ss.analytics.get_chart_data(n)
 
     st.markdown('<div class="ph">🌋 HYPER-VIZ MATRIX — 24 SCIENTIFIC PANELS</div>',
                 unsafe_allow_html=True)
+
+    if not ss.get("_render_viz", False):
+        st.info("🌌 The Hyper-Viz Matrix contains 24 high-resolution, color-mapped tensor streams. It is purely lazy-loaded to preserve the simulation tickrate.")
+        if st.button("IGNITE MATRIX (Mount Graphics)", use_container_width=True):
+            ss._render_viz = True
+            st.rerun()
+        return
+
+    if st.button("UNMOUNT MATRIX", use_container_width=True):
+        ss._render_viz = False
+        st.rerun()
+
+    n   = cfg.get("chart_points", 150)
+    cd  = ss.analytics.get_chart_data(n)
 
     if not _PLOTLY:
         st.warning("Install plotly: `pip install plotly`")
