@@ -55,27 +55,33 @@ class MazeGenerator:
     def backtracker(h: int, w: int, seed: int = None) -> np.ndarray:
         """
         Recursive Backtracker (DFS).
-        Produces long, winding corridors — the 'snake maze'.
-        Good for levels 1-3 where the agent needs to learn basic navigation.
+        With added Straight-Bias: produces longer hallways and fewer turns, 
+        reducing branching complexity while maintaining a perfect maze topology.
         """
         if seed is not None:
             rng = random.Random(seed)
         else:
             rng = random
 
-        # Work on a (2*ch+1) x (2*cw+1) grid where cell (r,c) maps to grid (2r+1, 2c+1)
         ch, cw = (h - 1) // 2, (w - 1) // 2
         grid = np.ones((h, w), dtype=np.int8)
+        straight_bias = 0.65  # 65% chance to prioritize continuing straight
 
-        def carve(cr, cc):
+        def carve(cr, cc, last_dr=0, last_dc=0):
             grid[2 * cr + 1, 2 * cc + 1] = PATH
             directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
             rng.shuffle(directions)
+            
+            # Bias toward maintaining the same direction to reduce winding complexity
+            if (last_dr, last_dc) in directions and rng.random() < straight_bias:
+                directions.remove((last_dr, last_dc))
+                directions.insert(0, (last_dr, last_dc))
+
             for dr, dc in directions:
                 nr, nc = cr + dr, cc + dc
                 if 0 <= nr < ch and 0 <= nc < cw and grid[2*nr+1, 2*nc+1] == WALL:
                     grid[2*cr+1 + dr, 2*cc+1 + dc] = PATH
-                    carve(nr, nc)
+                    carve(nr, nc, dr, dc)
 
         import sys
         sys.setrecursionlimit(10_000)
@@ -199,18 +205,12 @@ class MazeGenerator:
     @classmethod
     def hybrid(cls, h: int, w: int, seed: int = None) -> np.ndarray:
         """
-        Hybrid: Divide maze into quadrants, use different algorithms per quadrant.
-        Produces the most complex and unpredictable topology.
+        Hybrid: Generate a large backtracker base without making illegal shortcuts.
+        Produces complex but strict topology.
         """
         rng = random.Random(seed)
-        algs = [cls.backtracker, cls.prim, cls.wilson]
-        # Generate a large backtracker base and overlay sections
+        # Use straight-biased backtracker as the foundation
         grid = cls.backtracker(h, w, seed=rng.randint(0, 99999))
-        # Randomly clear some extra passages for shortcuts
-        for _ in range((h * w) // 20):
-            r = rng.randrange(1, h-1)
-            c = rng.randrange(1, w-1)
-            grid[r, c] = PATH
         return grid
 
     # ----------------------------------------------------------
@@ -228,7 +228,8 @@ class MazeGenerator:
             'hybrid':      cls.hybrid,
         }
         fn = alg_map.get(algorithm, cls.backtracker)
-        return fn(h, w, seed=seed)
+        grid = fn(h, w, seed=seed)
+        return grid
 
 
 # ============================================================
