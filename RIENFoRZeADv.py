@@ -2020,9 +2020,19 @@ def _tab_visualizations():
             fig = go.Figure(); fig.update_layout(**_lay("24. Scatter (no episodes yet)"))
         st.plotly_chart(fig, width='stretch', key="viz_p24")
 
+    # --- OLD UI CAPTION (Bypassed) ---
+    # st.caption(
+    #     f"📡 All 24 panels live. Plotly WebGL rendering. "
+    #     f"Steps logged: {ss.global_step:,} | Buffer: {len(ss.brain.memory):,} | "
+    #     f"Unique states: {ss.brain.curiosity.coverage()}"
+    # )
+
+    # --- NEW UI CAPTION (Safe for Tabular) ---
+    mem_size = len(ss.brain.model) if not hasattr(ss.brain, 'online_net') else len(ss.brain.memory)
+    
     st.caption(
         f"📡 All 24 panels live. Plotly WebGL rendering. "
-        f"Steps logged: {ss.global_step:,} | Buffer: {len(ss.brain.memory):,} | "
+        f"Steps logged: {ss.global_step:,} | Memory/Model Size: {mem_size:,} | "
         f"Unique states: {ss.brain.curiosity.coverage()}"
     )
 
