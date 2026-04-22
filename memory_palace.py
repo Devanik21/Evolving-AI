@@ -351,7 +351,7 @@ class PersistentStore:
         elif isinstance(obj, np.bool_):
             return bool(obj)
         elif isinstance(obj, dict):
-            return {self._serialize(k): self._serialize(v) for k, v in obj.items()}
+            return {str(k): self._serialize(v) for k, v in obj.items()}
         elif isinstance(obj, (list, tuple)):
             return [self._serialize(v) for v in obj]
         elif hasattr(obj, 'to_dict'):
