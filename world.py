@@ -350,7 +350,7 @@ class MazeEnvironment:
       • Time pressure (steps / max_steps)
     Total state size: 9 + 2 + 2 + 1 + 1 + 1 + 1 = 17
     """
-    STATE_SIZE  = 52
+    STATE_SIZE  = 6
     ACTION_SIZE = 4  # up, down, left, right
     DELTAS      = [(-1,0),(1,0),(0,-1),(0,1)]
 
@@ -377,6 +377,7 @@ class MazeEnvironment:
         self.step_count = 0
         self.done = False
         self.last_action = -1
+        self.agent_energy = 100.0
 
         # Metrics
         self.episode_reward    = 0.0
@@ -448,6 +449,7 @@ class MazeEnvironment:
         self.done          = False
         self.last_action   = -1
         self.episode_reward = 0.0
+        self.agent_energy = 100.0
         self.cells_visited  = {(self.agent_r, self.agent_c)}
         self.visit_grid     = np.zeros((H, W), dtype=np.float32)
         self.visit_grid[self.agent_r, self.agent_c] = 1.0
@@ -500,8 +502,23 @@ class MazeEnvironment:
             self.fog.update(self.agent_r, self.agent_c)
 
         # --- Compute reward ---
-        #reward = self._compute_reward(moved, old_dist, new_dist, trap_hit)
-        reward = self._compute_reward_discrete(trap_hit)
+        # Standard step penalty
+        reward = -0.05 
+        
+        # Distance shaping (Match RIENFoRZe.py)
+        reward += (old_dist - new_dist) * 1.5
+        
+        if trap_hit:
+            reward -= 10.0
+            
+        reached = (self.agent_r == self.target_r and self.agent_c == self.target_c)
+        if reached:
+            reward += 50.0 # Clear goal signal
+            
+        if self.step_count >= self.max_steps and not reached:
+            reward -= 5.0 # Timeout
+
+        self.agent_energy -= 0.1 # Metabolism
         self.episode_reward += reward
 
         # --- Check termination ---
