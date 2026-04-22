@@ -65,6 +65,10 @@ st.markdown("""
 /* ─ base ─ */
 .stApp{background:radial-gradient(ellipse at 20% 10%,#0d0d2e 0%,#080818 55%,#0a1a18 100%);
  color:#c9d1d9;font-family:'Segoe UI',sans-serif;}
+header {visibility: hidden;}
+.stDeployButton {display:none;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 * {box-sizing:border-box;}
 
 /* ─ shimmer title ─ */
