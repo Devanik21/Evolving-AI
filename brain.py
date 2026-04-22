@@ -414,16 +414,16 @@ class CurriculumManager:
     Levels 1-10 scale maze size, algorithm complexity, and obstacle types.
     """
     LEVEL_CONFIGS = {
-        1:  {'maze_h': 7,  'maze_w': 9,  'algorithm': 'backtracker', 'fog': False, 'dynamic': False, 'portals': False},
-        2:  {'maze_h': 9,  'maze_w': 11, 'algorithm': 'backtracker', 'fog': False, 'dynamic': False, 'portals': False},
-        3:  {'maze_h': 11, 'maze_w': 13, 'algorithm': 'prim',        'fog': False, 'dynamic': False, 'portals': False},
-        4:  {'maze_h': 13, 'maze_w': 15, 'algorithm': 'prim',        'fog': True,  'dynamic': False, 'portals': False},
-        5:  {'maze_h': 15, 'maze_w': 19, 'algorithm': 'wilson',      'fog': True,  'dynamic': False, 'portals': False},
-        6:  {'maze_h': 17, 'maze_w': 21, 'algorithm': 'wilson',      'fog': True,  'dynamic': True,  'portals': False},
-        7:  {'maze_h': 21, 'maze_w': 25, 'algorithm': 'backtracker', 'fog': True,  'dynamic': True,  'portals': False},
-        8:  {'maze_h': 25, 'maze_w': 29, 'algorithm': 'prim',        'fog': True,  'dynamic': True,  'portals': True},
-        9:  {'maze_h': 29, 'maze_w': 33, 'algorithm': 'wilson',      'fog': True,  'dynamic': True,  'portals': True},
-        10: {'maze_h': 35, 'maze_w': 41, 'algorithm': 'hybrid',      'fog': True,  'dynamic': True,  'portals': True},
+        1:  {'maze_h': 7,  'maze_w': 9,  'algorithm': 'simple',      'fog': False, 'dynamic': False, 'portals': False},
+        2:  {'maze_h': 9,  'maze_w': 11, 'algorithm': 'simple',      'fog': False, 'dynamic': False, 'portals': False},
+        3:  {'maze_h': 11, 'maze_w': 13, 'algorithm': 'backtracker', 'fog': False, 'dynamic': False, 'portals': False},
+        4:  {'maze_h': 13, 'maze_w': 15, 'algorithm': 'backtracker', 'fog': True,  'dynamic': False, 'portals': False},
+        5:  {'maze_h': 15, 'maze_w': 19, 'algorithm': 'prim',        'fog': True,  'dynamic': False, 'portals': False},
+        6:  {'maze_h': 17, 'maze_w': 21, 'algorithm': 'prim',        'fog': True,  'dynamic': True,  'portals': False},
+        7:  {'maze_h': 21, 'maze_w': 25, 'algorithm': 'wilson',      'fog': True,  'dynamic': True,  'portals': False},
+        8:  {'maze_h': 25, 'maze_w': 29, 'algorithm': 'wilson',      'fog': True,  'dynamic': True,  'portals': True},
+        9:  {'maze_h': 29, 'maze_w': 33, 'algorithm': 'hybrid',      'fog': True,  'dynamic': True,  'portals': True},
+        10: {'maze_h': 35, 'maze_w': 41, 'algorithm': 'open',        'fog': True,  'dynamic': True,  'portals': True},
     }
 
     def __init__(self):

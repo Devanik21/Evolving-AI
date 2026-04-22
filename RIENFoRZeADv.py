@@ -204,7 +204,7 @@ if not _OK:
 
 # ── Constants ──────────────────────────────────────────────
 SAVE_PATH   = "./alive_nexus_v4.json"
-STATE_SIZE  = 52
+STATE_SIZE  = 64
 ACTION_SIZE = 4
 ACTIONS     = ["↑ UP", "↓ DOWN", "← LEFT", "→ RIGHT"]
 ACTION_CLR  = ["#00f5ff", "#a855f7", "#f97316", "#22c55e"]
@@ -555,16 +555,19 @@ def _telemetry_strip():
         if v < ref: return f'<span class="tel-dn">▼</span>'
         return f'<span class="tel-nt">─</span>'
 
+    env_st = ss.env.get_stats()
+    diff   = env_st.get('difficulty', 5.0)
+
     cells = [
         (f"{ss.episode_count}",   "Episodes",  f'<span class="tel-nt">global</span>'),
         (f"{live['success_rate']:.1f}%","Win Rate", _d(live['success_rate'],50)),
         (f"{br.epsilon:.4f}",     "Epsilon",   _d(-br.epsilon,-0.5)),
         (f"{br.avg_reward:+.2f}", "Avg Reward",_d(br.avg_reward,0)),
         (_fmt_val(br.avg_loss),   "Avg Loss",  _d(-br.avg_loss,-0.01)),
+        (f"{diff:.1f}/10",        "Difficulty",_d(diff,5.0)),
         (f"{ent:.3f}",            "H(π) Entropy",f'<span class="tel-nt">nats</span>'),
         (f"L{br.curriculum.level}/10","Curriculum",_d(br.curriculum.level,1)),
         (_fmt_val(cap),           "Capability",_d(cap,50)),
-        (f"{ss.global_step:,}",   "Total Steps",f'<span class="tel-nt">env</span>'),
         (f"{sl['mood_emoji']} {sl['mood'][:6]}","Soul Mood",
          f'<span class="tel-nt">V={sl["valence"]:+.2f}</span>'),
     ]
