@@ -525,29 +525,33 @@ class AgentBrain:
         self.state_size  = state_size
         self.action_size = action_size
 
-        h1 = cfg.get('h1', 256)
-        h2 = cfg.get('h2', 128)
-        h3 = cfg.get('h3', 64)
+        # --- OLD NEURAL ARCHITECTURE (Bypassed) ---
+        # h1 = cfg.get('h1', 256)
+        # h2 = cfg.get('h2', 128)
+        # h3 = cfg.get('h3', 64)
+        # self.online_net = NeuralNet(state_size, h1, h2, h3, action_size)
+        # self.target_net = NeuralNet(state_size, h1, h2, h3, action_size)
+        # self.target_net.copy_from(self.online_net)
+        # self.memory    = PrioritizedReplayBuffer(cfg.get('buffer_size', 50_000))
+        # self.n_step    = NStepBuffer(cfg.get('n_steps', 3), cfg.get('gamma', 0.99))
 
-        self.online_net = NeuralNet(state_size, h1, h2, h3, action_size)
-        self.target_net = NeuralNet(state_size, h1, h2, h3, action_size)
-        self.target_net.copy_from(self.online_net)
+        # --- NEW PERFECT MEMORY ARCHITECTURE ---
+        self.q_table = {} 
+        self.model = {}
 
-        self.memory    = PrioritizedReplayBuffer(cfg.get('buffer_size', 50_000))
-        self.n_step    = NStepBuffer(cfg.get('n_steps', 3), cfg.get('gamma', 0.99))
         self.curiosity = IntrinsicCuriosity(beta=cfg.get('icm_beta', 0.05))
         self.curriculum = CurriculumManager()
-        self.lr_sched  = LRScheduler(base_lr=cfg.get('lr', 0.001))
+        self.lr_sched  = LRScheduler(base_lr=cfg.get('lr', 0.1)) # Higher LR for tabular
 
         # Hyper-parameters
         self.gamma           = cfg.get('gamma', 0.99)
         self.epsilon         = 0.7
         self.epsilon_min     = cfg.get('epsilon_min', 0.05)
         self.epsilon_decay   = cfg.get('epsilon_decay', 0.995)
-        self.learning_rate   = cfg.get('lr', 0.001)
+        self.learning_rate   = 0.3 # Exact updates require higher LR than gradients
         self.batch_size      = cfg.get('batch_size', 64)
         self.tau             = cfg.get('tau', 0.005)
-        self.planning_steps  = cfg.get('planning_steps', 5)  # Dyna-Q training multiplier
+        self.planning_steps  = cfg.get('planning_steps', 20)  # Dyna-Q training multiplier
 
         # Counters & stats
         self.train_step     = 0
@@ -558,14 +562,78 @@ class AgentBrain:
         self.recent_td_errors = deque(maxlen=200)
 
     # ----------------------------------------------------------
-    def act(self, state: np.ndarray, greedy: bool = False) -> int:
+    def act(self, state, greedy: bool = False) -> int:
         if not greedy and np.random.rand() < self.epsilon:
             return random.randrange(self.action_size)
-        q = self.online_net.forward(state, training=False)
-        return int(np.argmax(q[0]))
+            
+        # --- OLD CONTINUOUS ACT ---
+        # q = self.online_net.forward(state, training=False)
+        # return int(np.argmax(q[0]))
+        
+        # --- NEW DISCRETE ACT ---
+        q_values = [self.q_table.get((state, a), 0.0) for a in range(self.action_size)]
+        max_q = max(q_values)
+        best_actions = [a for a, q in enumerate(q_values) if q == max_q]
+        return random.choice(best_actions)
 
-    # ----------------------------------------------------------
     def step(self, state, action, reward, next_state, done):
+        """Process one environment transition using Dyna-Q."""
+        # Add intrinsic curiosity bonus
+        intrinsic = self.curiosity.bonus(np.array(state)) # Typecast back to array for curiosity stats
+        augmented_reward = reward + intrinsic
+        self.episode_reward += reward
+
+        # --- OLD EXPERIENCE REPLAY LOGIC ---
+        # exp = self.n_step.add(state, action, augmented_reward, next_state, done)
+        # if exp: self.memory.add(*exp)
+        # ... (skip n_step flush and memory sample) ...
+
+        # --- NEW DYNA-Q LEARNING & HALLUCINATION ---
+        # 1. Direct RL Update (Tabular Q-Learning)
+        best_next_q = max([self.q_table.get((next_state, a), 0.0) for a in range(self.action_size)])
+        current_q = self.q_table.get((state, action), 0.0)
+        
+        target = augmented_reward + (0.0 if done else self.gamma * best_next_q)
+        td_error = target - current_q
+        self.q_table[(state, action)] = current_q + self.learning_rate * td_error
+
+        # 2. Update Internal World Model (Perfect Memory)
+        self.model[(state, action)] = (next_state, augmented_reward)
+
+        # 3. Dyna-Q Planning (Hallucination)
+        if len(self.model) > 0:
+            actual_planning_steps = self.planning_steps
+            if done and reward > 10.0:
+                actual_planning_steps *= 4 # Super Brain Mode on Goal find
+                
+            for _ in range(actual_planning_steps):
+                s_rand, a_rand = random.choice(list(self.model.keys()))
+                ns_rand, r_rand = self.model[(s_rand, a_rand)]
+                
+                curr_q_plan = self.q_table.get((s_rand, a_rand), 0.0)
+                best_next_q_plan = max([self.q_table.get((ns_rand, a), 0.0) for a in range(self.action_size)])
+                
+                upd_q = curr_q_plan + self.learning_rate * (r_rand + self.gamma * best_next_q_plan - curr_q_plan)
+                self.q_table[(s_rand, a_rand)] = upd_q
+
+        loss = float(abs(td_error))
+        td_err = float(abs(td_error))
+        self.train_step += 1
+
+        if done:
+            self.total_eps += 1
+            self.recent_rewards.append(self.episode_reward)
+            # Use fixed tabular LR to prevent scheduler from zeroing it out
+            # lr = self.lr_sched.step(self.avg_reward) 
+            self.episode_reward = 0.0
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+
+        self.recent_losses.append(loss)
+        self.recent_td_errors.append(td_err)
+        return loss, td_err
+      
+    # ----------------------------------------------------------
+    '''def step(self, state, action, reward, next_state, done):
         """Process one environment transition."""
         # Add intrinsic curiosity bonus
         intrinsic = self.curiosity.bonus(state)
@@ -615,7 +683,7 @@ class AgentBrain:
 
         self.recent_losses.append(loss)
         self.recent_td_errors.append(td_err)
-        return loss, td_err
+        return loss, td_err'''
 
     # ----------------------------------------------------------
     def _train(self) -> Tuple[float, float]:
@@ -687,8 +755,18 @@ class AgentBrain:
             'target': self.target_net.get_weights(),
         }
 
+    def get_weights(self) -> Dict:
+        # --- OLD JSON SAVE ---
+        # return {'online': self.online_net.get_weights(), 'target': self.target_net.get_weights()}
+        # --- NEW JSON SAVE (Tuples to Strings) ---
+        return {"q_table": {str(k): v for k, v in self.q_table.items()}}
+
     def set_weights(self, d: Dict):
-        if 'online' in d:
-            self.online_net.set_weights(d['online'])
-        if 'target' in d:
-            self.target_net.set_weights(d['target'])
+        # We can bypass restoring tabular memory from old D3QN zip files
+        pass
+    #def set_weights(self, d: Dict):
+      
+        #if 'online' in d:
+         #   self.online_net.set_weights(d['online'])
+        #if 'target' in d:
+        #    self.target_net.set_weights(d['target'])
