@@ -409,4 +409,6 @@ class PerformanceDashboard:
             'episodes': self.tracker.episodes[-100:],
             'capability_history': list(self.capability.history),
         }
+        from memory_palace import PersistentStore
+        data = PersistentStore()._serialize(data)
         return json.dumps(data, indent=2)
