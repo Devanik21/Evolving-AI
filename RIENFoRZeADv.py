@@ -326,7 +326,7 @@ def _init():
     ss.last_ep_reward  = 0.0
     ss.last_ep_success = False
 
-if "brain" not in st.session_state or "entropy_hist" not in st.session_state:
+if "brain" not in st.session_state or "episode_count" not in st.session_state:
     _init()
 
 # ── Simulation core ────────────────────────────────────────
@@ -384,37 +384,46 @@ def process_step():
     state  = ss.cur_state
     action = ss.brain.act(state)
 
-    # ── Scientific instrumentation (pre-step) ──────────────
-    bn  = ss.brain.online_net
-    qv  = bn.forward(state, training=True)   # caches val/adv internals
-    q   = qv[0]                              # shape (4,)
-    prb = _softmax(q)
-    ent = _entropy(prb)
-    # Extract V(s) and max A(s,a) from the cached dueling heads
-    _cache = getattr(bn, "_cache", {})
-    if "val" in _cache and "adv" in _cache:
-        val_raw = float(_cache["val"][0, 0])
-        adv_raw = float(_cache["adv"][0].max() - _cache["adv"][0].mean())
-    else:
+    # ---------------------------------------------------------
+    # --- NEW: SAFE TELEMETRY BYPASS FOR TABULAR BRAIN ---
+    if hasattr(ss.brain, 'online_net'):
+        # Old Neural Network Logic (Ignored)
+        bn  = ss.brain.online_net
+        qv  = bn.forward(state, training=True)   
+        q   = qv[0]                              
         val_raw = float(q.mean())
         adv_raw = float(q.max() - q.mean())
+        new_w1 = bn.W1
+        gnorm  = float(np.linalg.norm(new_w1 - ss.prev_w1, 'fro'))
+        ss.prev_w1 = new_w1.copy()
+    else:
+        # New Tabular Logic (Feeds safe data to UI graphs)
+        q = np.array([ss.brain.q_table.get((state, a), 0.0) for a in range(ACTION_SIZE)])
+        val_raw = float(q.mean())
+        adv_raw = float(q.max() - q.mean())
+        gnorm = 0.0  # Tabular doesn't have gradient norms
+    # ---------------------------------------------------------
+
+    prb = _softmax(q)
+    ent = _entropy(prb)
 
     ss.qval_hist.append(q.tolist())
     ss.entropy_hist.append(ent)
     ss.val_hist.append(val_raw)
     ss.adv_hist.append(adv_raw)
     ss.action_counts[action] += 1
+    ss.gnorm_hist.append(gnorm)
 
     # ── Step ───────────────────────────────────────────────
     ns, reward, done, info = ss.env.step(action)
 
-    # Bellman residual
-    qns = bn.forward(ns, training=False)
-    br_res = abs(reward + ss.brain.gamma*(1-float(done))*float(qns[0].max()) - q[action])
+    # Bellman residual (Safe Tabular Calculation)
+    qns_max = max([ss.brain.q_table.get((ns, a), 0.0) for a in range(ACTION_SIZE)])
+    br_res = abs(reward + ss.brain.gamma*(1-float(done))*qns_max - q[action])
     ss.bellman_hist.append(float(br_res))
 
     # Intrinsic / extrinsic decomposition
-    intr = float(ss.brain.curiosity.bonus(state))
+    intr = float(ss.brain.curiosity.bonus(np.array(state))) # Cast for curiosity
     ss.intr_hist.append(intr)
     ss.extr_hist.append(float(reward))
 
@@ -1156,10 +1165,18 @@ def _tab_memory():
 # TAB 5 — BRAIN AUTOPSY
 # ══════════════════════════════════════════════════════════
 def _tab_brain():
-    ss = st.session_state; br = ss.brain; bn = br.online_net
+    ss = st.session_state; br = ss.brain
     n = ss.config.get("chart_points",150); cd = ss.analytics.get_chart_data(n)
 
     st.markdown('<div class="ph">🔬 BRAIN AUTOPSY</div>', unsafe_allow_html=True)
+    
+    # --- NEW: GUARD AGAINST MISSING NEURAL NET ---
+    if not hasattr(br, 'online_net'):
+        st.info("🧠 Tabular Dyna-Q Architecture Active. Neural weights (W1) and continuous bias plots are disabled for absolute discrete logic.")
+        return
+    # ---------------------------------------------
+    
+    bn = br.online_net
     cb1,cb2 = st.columns([3,2],gap="large")
 
     with cb1:
