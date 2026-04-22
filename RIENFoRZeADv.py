@@ -304,11 +304,12 @@ def _init():
     ss.extr_hist:     deque = deque(maxlen=N)   # extrinsic reward
     ss.val_hist:      deque = deque(maxlen=N)   # V(s) from value head
     ss.adv_hist:      deque = deque(maxlen=N)   # max A(s,a)
-    ss.gnorm_hist:    deque = deque(maxlen=N)   # gradient-norm proxy (|ΔW1|_F)
-    ss.bellman_hist:  deque = deque(maxlen=N)   # |r + γ max Q(s') - Q(s,a)|
+   # ss.gnorm_hist:    deque = deque(maxlen=N)   # gradient-norm proxy (|ΔW1|_F)
+   # ss.bellman_hist:  deque = deque(maxlen=N)   # |r + γ max Q(s') - Q(s,a)|
     ss.action_counts: List  = [0, 0, 0, 0]     # U D L R histogram
     ss.trajectory:    deque = deque(maxlen=30)  # (r,c) recent positions
-    ss.prev_w1:       np.ndarray = ss.brain.online_net.W1.copy()  # for grad proxy
+   # ss.prev_w1:       np.ndarray = ss.brain.online_net.W1.copy()  # for grad proxy
+    ss.prev_w1 = None
     ss.best_ep:       Optional[Dict] = None
     ss.worst_ep:      Optional[Dict] = None
     ss.ep_log:        deque = deque(maxlen=200)  # lightweight episode log
