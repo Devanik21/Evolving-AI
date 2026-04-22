@@ -1,4 +1,4 @@
-"""     
+"""
 app.py ── A.L.I.V.E. NEXUS  v4.0  "Event Horizon Edition"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Co-Investigator: Xylia | Collaborator: Nik
@@ -6,7 +6,7 @@ Project: The Event Horizon
 
 SCIENTIFIC INSTRUMENTATION  (new in v4.0)
   ✦ Live Q(s,a) vector bar-chart — real-time policy readout   
-  ✦ Policy entropy H(π) timeline — quantifies exploration                
+  ✦ Policy entropy H(π) timeline — quantifies exploration
   ✦ Reward decomposition: intrinsic (ICM) vs extrinsic
   ✦ V(s) / max-Advantage streaming — dueling head analysis
   ✦ Gradient-norm proxy tracker — training stability signal
@@ -211,9 +211,10 @@ ACTION_CLR  = ["#00f5ff", "#a855f7", "#f97316", "#22c55e"]
 
 DEFAULT_CFG: Dict = {
     "sim_speed": 0.04, "steps_per_frame": 1, "autosave_interval": 100,
-    "gamma": 0.99, "epsilon_min": 0.04, "epsilon_decay": 0.997,
-    "lr": 0.001, "batch_size": 64, "buffer_size": 50_000,
-    "n_steps": 3, "icm_beta": 0.05, "tau": 0.005,
+    "gamma": 0.99, "epsilon_min": 0.04, "epsilon_decay": 0.99,
+    "lr": 0.001, "batch_size": 128, "buffer_size": 50_000,
+    "n_steps": 8, "icm_beta": 0.05, "tau": 0.005,
+    "planning_steps": 25,
     "h1": 512, "h2": 256, "h3": 128,
     "show_astar": False, "chart_points": 150,
     "override_curriculum": False, "manual_level": 1,

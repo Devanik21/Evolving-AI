@@ -547,7 +547,7 @@ class AgentBrain:
         self.learning_rate   = cfg.get('lr', 0.001)
         self.batch_size      = cfg.get('batch_size', 64)
         self.tau             = cfg.get('tau', 0.005)
-        self.planning_steps  = cfg.get('planning_steps', 5)  # Dyna-Q training multiplier
+        self.planning_steps  = cfg.get('planning_steps', 25)  # Accelerated Dyna-Q (5x intensity)
 
         # Counters & stats
         self.train_step     = 0
@@ -588,8 +588,10 @@ class AgentBrain:
             # Dyna-Q Hallucination / Accelerated Planning
             # Train Multiple batches from memory per real environmental physical step.
             actual_planning_steps = self.planning_steps
-            if done and self.episode_reward > 10.0:
-                actual_planning_steps *= 4  # Core breakthrough learning (Super Brain Mode)
+            # Instant Breakthrough: If the agent reached the goal, intensify learning
+            reached = (reward > 20.0) # Goal reward is typically > 25
+            if done and reached:
+                actual_planning_steps *= 5  # 125 planning cycles on success
                 
             for _ in range(actual_planning_steps):
                 l, t = self._train()
