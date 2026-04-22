@@ -2,7 +2,7 @@
 app.py ── A.L.I.V.E. NEXUS  v4.0  "Event Horizon Edition"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Co-Investigator: Xylia | Collaborator: Nik
-Project: The Event Horizon    
+Project: The Event Horizon  
 
 SCIENTIFIC INSTRUMENTATION  (new in v4.0)
   ✦ Live Q(s,a) vector bar-chart — real-time policy readout     
@@ -1243,21 +1243,12 @@ def _tab_brain():
             f'<span class="badge bg">ICM</span><br><br>'
             f'&#964;={br.tau}  &#945;_PER=0.6  clip&#177;10</div>',unsafe_allow_html=True)
 
-        # --- COMMENT OUT THE OLD NEURAL UI ---
-        # st.markdown("**Replay Buffer (PER)**")
-        # buf = len(br.memory)/br.memory.capacity
-        # st.progress(buf,text=f"{len(br.memory):,}/{br.memory.capacity:,}")
-        # m1,m2 = st.columns(2)
-        # m1.metric("PER β",       f"{br.memory.beta:.3f}")
-        # m2.metric("Max Priority",f"{br.memory.max_priority:.3f}")
-
-        # --- PASTE THIS NEW TABULAR UI INSTEAD ---
-        st.markdown("**World Model Memory (Dyna-Q)**")
-        # Progress bar scales dynamically as the agent memorizes the maze
-        st.progress(min(1.0, len(br.model) / 2000), text=f"Known State-Actions: {len(br.model):,}")
-        m1, m2 = st.columns(2)
-        m1.metric("PER β", "N/A")
-        m2.metric("Max Priority", "Tabular")
+        st.markdown("**Replay Buffer (PER)**")
+        buf = len(br.memory)/br.memory.capacity
+        st.progress(buf,text=f"{len(br.memory):,}/{br.memory.capacity:,}")
+        m1,m2 = st.columns(2)
+        m1.metric("PER β",       f"{br.memory.beta:.3f}")
+        m2.metric("Max Priority",f"{br.memory.max_priority:.3f}")
 
         st.markdown("**Curiosity Module**")
         m3,m4 = st.columns(2)
@@ -1270,11 +1261,10 @@ def _tab_brain():
         lr_r = br.lr_sched.reductions if hasattr(br,"lr_sched") else "—"
         m6.metric("LR Reductions",lr_r)
 
-        st.markdown("**State Vector (17-dim)**")
+        st.markdown("**State Vector (6-dim)**")
         st.dataframe(pd.DataFrame({
-            "Component":["3×3 Vision","Agent r,c","Target r,c",
-                         "Manhattan","Trap dist","Fog cov","Time"],
-            "Dims":[9,2,2,1,1,1,1]
+            "Component":["Agent Pos (r,c)","Target Pos (r,c)","Energy","Time"],
+            "Dims":[2,2,1,1]
         }),hide_index=True,width='stretch')
 
 # ══════════════════════════════════════════════════════════
