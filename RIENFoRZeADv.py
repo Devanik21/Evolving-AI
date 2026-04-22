@@ -466,7 +466,8 @@ def _make_zip() -> Optional[bytes]:
              "capability":ss.capability}
         buf = io.BytesIO()
         with zipfile.ZipFile(buf,"w",zipfile.ZIP_DEFLATED) as z:
-            z.writestr("alive_nexus_v4.json",json.dumps(p,indent=2,default=_np_enc))
+            p_safe = ss.memory.store._serialize(p)
+            z.writestr("alive_nexus_v4.json",json.dumps(p_safe,indent=2))
         return buf.getvalue()
     except Exception as e: st.toast(f"Export error: {e}"); return None
 
