@@ -350,7 +350,7 @@ class MazeEnvironment:
       • Time pressure (steps / max_steps)
     Total state size: 9 + 2 + 2 + 1 + 1 + 1 + 1 = 17
     """
-    STATE_SIZE  = 48
+    STATE_SIZE  = 52
     ACTION_SIZE = 4  # up, down, left, right
     DELTAS      = [(-1,0),(1,0),(0,-1),(0,1)]
 
@@ -376,6 +376,7 @@ class MazeEnvironment:
         self.target_c = 1
         self.step_count = 0
         self.done = False
+        self.last_action = -1
 
         # Metrics
         self.episode_reward    = 0.0
@@ -445,6 +446,7 @@ class MazeEnvironment:
         # Reset counters
         self.step_count    = 0
         self.done          = False
+        self.last_action   = -1
         self.episode_reward = 0.0
         self.cells_visited  = {(self.agent_r, self.agent_c)}
         self.visit_grid     = np.zeros((H, W), dtype=np.float32)
@@ -458,6 +460,7 @@ class MazeEnvironment:
         if self.done:
             return self._encode_state(), 0.0, True, {}
 
+        self.last_action = action
         dr, dc = self.DELTAS[action]
         nr, nc = self.agent_r + dr, self.agent_c + dc
         H, W = self.maze.shape
@@ -609,8 +612,11 @@ class MazeEnvironment:
         # 7. Time pressure
         time_pressure = self.step_count / max(self.max_steps, 1)
 
-        # Total: 25(vision) + 13(pheromones) + 2(pos) + 2(tpos) + 2(dir) + 1(dist) + 1(trap) + 1(fog) + 1(time) = 48
-        state = vision + pheromones + pos + tpos + dir_vec + [dist, trap_dist, fog_cov, time_pressure]
+        # 8. Kinesthetic Momentum (4-D One-Hot)
+        momentum = [1.0 if self.last_action == a else 0.0 for a in range(4)]
+
+        # Total: 25(vision) + 13(pheromones) + 2(pos) + 2(tpos) + 2(dir) + 1(dist) + 1(trap) + 1(fog) + 1(time) + 4(mom) = 52
+        state = vision + pheromones + pos + tpos + dir_vec + [dist, trap_dist, fog_cov, time_pressure] + momentum
         return np.array(state, dtype=np.float32)
 
     # ----------------------------------------------------------
