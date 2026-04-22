@@ -1,6 +1,6 @@
 """
 app.py ── A.L.I.V.E. NEXUS  v4.0  "Event Horizon Edition"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  
 Co-Investigator: Xylia | Collaborator: Nik
 Project: The Event Horizon  
 
