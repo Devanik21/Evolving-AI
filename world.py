@@ -498,25 +498,24 @@ class MazeEnvironment:
             self.fog.update(self.agent_r, self.agent_c)
 
         # --- Compute reward ---
-        # 0% Cheat Reward Logic
-        # Manhattan distance (Traditional scent-based hint)
-        old_dist = abs(self.agent_r - self.target_r) + abs(self.agent_c - self.target_c)
-        dr, dc = self.DELTAS[action]
-        nr, nc = self.agent_r + dr, self.agent_c + dc
-        new_dist = abs(nr - self.target_r) + abs(nc - self.target_c)
-
+        # 0% Cheat Reward Logic (Corrected for Wall Bumping)
+        new_dist = abs(self.agent_r - self.target_r) + abs(self.agent_c - self.target_c)
+        
         # Standard step penalty
         reward = -0.1 
         
-        # Subtle direction hint (Non-cheating potential)
-        reward += (old_dist - new_dist) * 1.5
+        # Actual progress reward (Potential-based)
+        if moved:
+            reward += (old_dist - new_dist) * 2.0
+        else:
+            reward -= 0.5 # "Ouch" penalty for bumping a wall
         
         # Penalty for loitering (Visit-based)
-        visit_penalty = min(2.0, self.visit_grid[self.agent_r, self.agent_c] * 0.05)
+        visit_penalty = min(1.0, self.visit_grid[self.agent_r, self.agent_c] * 0.02)
         reward -= visit_penalty
 
         if trap_hit:
-            reward -= 10.0
+            reward -= 15.0
             
         reached = (self.agent_r == self.target_r and self.agent_c == self.target_c)
         if reached:
@@ -607,24 +606,28 @@ class MazeEnvironment:
     def _encode_state(self) -> np.ndarray:
         """
         0% CHEAT PERCEPTUAL STATE (6-D)
-        [Rel_R, Rel_C, Wall_UD, Wall_LR, Visit_Count, Energy]
+        [Compass_Sign_R, Compass_Sign_C, Wall_UD, Wall_LR, Boredom, Energy]
         """
         H, W = self.maze.shape
         # Wall sensors
-        wall_ud = 0.0 # 0=None, 0.5=Top, -0.5=Bottom, 1=Both
+        wall_ud = 0.0 
         if self.agent_r > 0 and self.maze[self.agent_r-1, self.agent_c] == WALL: wall_ud += 0.5
         if self.agent_r < H-1 and self.maze[self.agent_r+1, self.agent_c] == WALL: wall_ud -= 0.5
         
-        wall_lr = 0.0 # 0=None, 0.5=Left, -0.5=Right, 1=Both
+        wall_lr = 0.0
         if self.agent_c > 0 and self.maze[self.agent_r, self.agent_c-1] == WALL: wall_lr += 0.5
         if self.agent_c < W-1 and self.maze[self.agent_r, self.agent_c+1] == WALL: wall_lr -= 0.5
 
+        # Binary compass (Human-like sense: "Goal is North-ish")
+        dr = np.sign(self.target_r - self.agent_r)
+        dc = np.sign(self.target_c - self.agent_c)
+
         state = [
-            (self.target_r - self.agent_r) / H, # Relative R Compass
-            (self.target_c - self.agent_c) / W, # Relative C Compass
-            wall_ud,                            # Y-Axis Wall Sensor
-            wall_lr,                            # X-Axis Wall Sensor
-            min(1.0, self.visit_grid[self.agent_r, self.agent_c] / 20.0), # Boredom Meter
+            dr,                                 # Relative Direction R (-1, 0, 1)
+            dc,                                 # Relative Direction C (-1, 0, 1)
+            wall_ud,                            # Y-Axis Tactile Sensor
+            wall_lr,                            # X-Axis Tactile Sensor
+            min(1.0, self.visit_grid[self.agent_r, self.agent_c] / 15.0), # Boredom Meter
             self.agent_energy / 100.0
         ]
         return np.array(state, dtype=np.float32)
