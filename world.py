@@ -65,7 +65,7 @@ class MazeGenerator:
 
         ch, cw = (h - 1) // 2, (w - 1) // 2
         grid = np.ones((h, w), dtype=np.int8)
-        straight_bias = 0.85  # 85% chance to continue straight, creates simpler hallways
+        straight_bias = 0.65  # 65% chance to prioritize continuing straight
 
         def carve(cr, cc, last_dr=0, last_dc=0):
             grid[2 * cr + 1, 2 * cc + 1] = PATH
@@ -201,47 +201,6 @@ class MazeGenerator:
 
         return grid
 
-    @classmethod
-    def simple_binary(cls, h: int, w: int, seed: int = None) -> np.ndarray:
-        """
-        Binary Tree Algorithm.
-        For every cell, carve either Up or Left.
-        The simplest possible perfect maze; extremely easy for agents to solve.
-        """
-        rng = random.Random(seed)
-        grid = np.ones((h, w), dtype=np.int8)
-        ch, cw = (h - 1) // 2, (w - 1) // 2
-        
-        for r in range(ch):
-            for c in range(cw):
-                grid[2*r+1, 2*c+1] = PATH
-                choices = []
-                if r > 0: choices.append((-1, 0))
-                if c > 0: choices.append((0, -1))
-                
-                if choices:
-                    dr, dc = rng.choice(choices)
-                    grid[2*r+1 + dr, 2*c+1 + dc] = PATH
-        return grid
-
-    # ----------------------------------------------------------
-    @classmethod
-    def open_grid(cls, h: int, w: int, seed: int = None) -> np.ndarray:
-        """
-        Open Grid (Room Style).
-        Starts with a backtracker but then randomly clears 30% of walls.
-        Creates an open environment with many alternative paths.
-        """
-        rng = random.Random(seed)
-        grid = cls.backtracker(h, w, seed=rng.randint(0, 99999))
-        walls = list(zip(*np.where(grid == WALL)))
-        # Filter out boundary walls
-        inner_walls = [(r, c) for r, c in walls if 0 < r < h-1 and 0 < c < w-1]
-        rng.shuffle(inner_walls)
-        for i in range(len(inner_walls) // 3):
-            grid[inner_walls[i]] = PATH
-        return grid
-
     # ----------------------------------------------------------
     @classmethod
     def hybrid(cls, h: int, w: int, seed: int = None) -> np.ndarray:
@@ -267,10 +226,8 @@ class MazeGenerator:
             'prim':        cls.prim,
             'wilson':      cls.wilson,
             'hybrid':      cls.hybrid,
-            'simple':      cls.simple_binary,
-            'open':        cls.open_grid,
         }
-        fn = alg_map.get(algorithm, cls.simple_binary)
+        fn = alg_map.get(algorithm, cls.backtracker)
         grid = fn(h, w, seed=seed)
         return grid
 
