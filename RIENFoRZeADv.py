@@ -202,7 +202,7 @@ if not _OK:
 
 # ── Constants ──────────────────────────────────────────────
 SAVE_PATH   = "./alive_nexus_v4.json"
-STATE_SIZE  = 26
+STATE_SIZE  = 48
 ACTION_SIZE = 4
 ACTIONS     = ["↑ UP", "↓ DOWN", "← LEFT", "→ RIGHT"]
 ACTION_CLR  = ["#00f5ff", "#a855f7", "#f97316", "#22c55e"]
