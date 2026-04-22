@@ -500,7 +500,8 @@ class MazeEnvironment:
             self.fog.update(self.agent_r, self.agent_c)
 
         # --- Compute reward ---
-        reward = self._compute_reward(moved, old_dist, new_dist, trap_hit)
+        #reward = self._compute_reward(moved, old_dist, new_dist, trap_hit)
+        reward = self._compute_reward_discrete(trap_hit)
         self.episode_reward += reward
 
         # --- Check termination ---
@@ -521,8 +522,36 @@ class MazeEnvironment:
             'optimality':   self.astar_optimal / max(self.step_count, 1),
         }
 
-        return self._encode_state(), reward, self.done, info
+        #return self._encode_state(), reward, self.done, info
+        # OLD CONTINUOUS RETURN:
+        # return self._encode_state(), reward, self.done, info
+        # NEW DISCRETE RETURN:
+        return self._encode_state_discrete(), reward, self.done, info
 
+
+    # ----------------------------------------------------------
+    # --- NEW: 0% CHEAT DISCRETE LOGIC ---
+    def _encode_state_discrete(self) -> tuple:
+        """Returns the exact, unaliased discrete coordinate."""
+        return (self.agent_r, self.agent_c)
+
+    def _compute_reward_discrete(self, trap_hit: bool) -> float:
+        """Pure step penalties. No distance shaping, no double-curiosity."""
+        r = -0.1  # Standard step penalty forces shortest path learning
+        if trap_hit:
+            r -= 5.0
+            
+        reached = (self.agent_r == self.target_r and self.agent_c == self.target_c)
+        if reached:
+            # Massive Jackpot to anchor the RL policy, scaling with path efficiency
+            efficiency = max(0.0, self.astar_optimal / max(self.step_count, 1))
+            r += 25.0 + 10.0 * efficiency
+
+        if self.step_count >= self.max_steps and not reached:
+            r -= 2.0  # Timeout penalty
+
+        return float(np.clip(r, -20.0, 100.0))
+      
     # ----------------------------------------------------------
     def _compute_reward(self, moved: bool, old_dist: int, new_dist: int,
                         trap_hit: bool) -> float:
