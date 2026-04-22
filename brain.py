@@ -533,11 +533,12 @@ class AgentBrain:
         # Hyper-parameters
         self.gamma           = cfg.get('gamma', 0.99)
         self.epsilon         = 1.0
-        self.epsilon_min     = cfg.get('epsilon_min', 0.04)
-        self.epsilon_decay   = cfg.get('epsilon_decay', 0.997)
+        self.epsilon_min     = cfg.get('epsilon_min', 0.05)
+        self.epsilon_decay   = cfg.get('epsilon_decay', 0.9995)
         self.learning_rate   = cfg.get('lr', 0.001)
         self.batch_size      = cfg.get('batch_size', 64)
         self.tau             = cfg.get('tau', 0.005)
+        self.planning_steps  = cfg.get('planning_steps', 5)  # Dyna-Q training multiplier
 
         # Counters & stats
         self.train_step     = 0
@@ -575,14 +576,23 @@ class AgentBrain:
         # Train if buffer is ready
         loss, td_err = 0.0, 0.0
         if len(self.memory) >= self.batch_size:
-            loss, td_err = self._train()
+            # Dyna-Q Hallucination / Accelerated Planning
+            # Train Multiple batches from memory per real environmental physical step.
+            actual_planning_steps = self.planning_steps
+            if done and self.episode_reward > 10.0:
+                actual_planning_steps *= 4  # Core breakthrough learning (Super Brain Mode)
+                
+            for _ in range(actual_planning_steps):
+                l, t = self._train()
+                loss += l
+                td_err += t
+            
+            loss /= actual_planning_steps
+            td_err /= actual_planning_steps
             self.train_step += 1
 
             # Soft-update target network every step
             self.target_net.soft_update(self.online_net, tau=self.tau)
-
-            # Decay epsilon
-            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
         if done:
             self.total_eps += 1
@@ -590,6 +600,9 @@ class AgentBrain:
             lr = self.lr_sched.step(self.avg_reward)
             self.learning_rate = lr
             self.episode_reward = 0.0
+            
+            # FIXED BUG: Decay epsilon only ONCE per episode (Match MazE.py physics)
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
         self.recent_losses.append(loss)
         self.recent_td_errors.append(td_err)
