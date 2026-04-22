@@ -1249,12 +1249,21 @@ def _tab_brain():
             f'<span class="badge bg">ICM</span><br><br>'
             f'&#964;={br.tau}  &#945;_PER=0.6  clip&#177;10</div>',unsafe_allow_html=True)
 
-        st.markdown("**Replay Buffer (PER)**")
-        buf = len(br.memory)/br.memory.capacity
-        st.progress(buf,text=f"{len(br.memory):,}/{br.memory.capacity:,}")
-        m1,m2 = st.columns(2)
-        m1.metric("PER β",       f"{br.memory.beta:.3f}")
-        m2.metric("Max Priority",f"{br.memory.max_priority:.3f}")
+        # --- COMMENT OUT THE OLD NEURAL UI ---
+        # st.markdown("**Replay Buffer (PER)**")
+        # buf = len(br.memory)/br.memory.capacity
+        # st.progress(buf,text=f"{len(br.memory):,}/{br.memory.capacity:,}")
+        # m1,m2 = st.columns(2)
+        # m1.metric("PER β",       f"{br.memory.beta:.3f}")
+        # m2.metric("Max Priority",f"{br.memory.max_priority:.3f}")
+
+        # --- PASTE THIS NEW TABULAR UI INSTEAD ---
+        st.markdown("**World Model Memory (Dyna-Q)**")
+        # Progress bar scales dynamically as the agent memorizes the maze
+        st.progress(min(1.0, len(br.model) / 2000), text=f"Known State-Actions: {len(br.model):,}")
+        m1, m2 = st.columns(2)
+        m1.metric("PER β", "N/A")
+        m2.metric("Max Priority", "Tabular")
 
         st.markdown("**Curiosity Module**")
         m3,m4 = st.columns(2)
