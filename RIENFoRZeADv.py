@@ -388,17 +388,22 @@ def process_step():
     # ---------------------------------------------------------
     # --- NEW: SAFE TELEMETRY BYPASS FOR TABULAR BRAIN ---
     if hasattr(ss.brain, 'online_net'):
-        # Old Neural Network Logic (Ignored)
+        # Old Neural Network Logic (Safe guard)
         bn  = ss.brain.online_net
-        qv  = bn.forward(state, training=True)   
+        s_arr = np.array(state) # Ensure array for NeuralNet
+        qv  = bn.forward(s_arr, training=True)   
         q   = qv[0]                              
         val_raw = float(q.mean())
         adv_raw = float(q.max() - q.mean())
         new_w1 = bn.W1
-        gnorm  = float(np.linalg.norm(new_w1 - ss.prev_w1, 'fro'))
+        if ss.prev_w1 is not None:
+            gnorm = float(np.linalg.norm(new_w1 - ss.prev_w1, 'fro'))
+        else:
+            gnorm = 0.0
         ss.prev_w1 = new_w1.copy()
     else:
         # New Tabular Logic (Feeds safe data to UI graphs)
+        # state is already a tuple (r,c) from world.py
         q = np.array([ss.brain.q_table.get((state, a), 0.0) for a in range(ACTION_SIZE)])
         val_raw = float(q.mean())
         adv_raw = float(q.max() - q.mean())
@@ -430,11 +435,7 @@ def process_step():
 
     loss, td_err = ss.brain.step(state, action, reward, ns, done)
 
-    # Gradient-norm proxy: Frobenius norm of ΔW1
-    new_w1 = bn.W1
-    gnorm  = float(np.linalg.norm(new_w1 - ss.prev_w1, 'fro'))
-    ss.gnorm_hist.append(gnorm)
-    ss.prev_w1 = new_w1.copy()
+
 
     ss.memory.record_transition(state, action, reward, ns, done)
     ss.analytics.record_step(ss.env.agent_r, ss.env.agent_c, loss, td_err, ss.brain.epsilon)

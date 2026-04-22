@@ -390,7 +390,7 @@ class MazeEnvironment:
         self.reset()
 
     # ----------------------------------------------------------
-    def reset(self, config: Dict = None, seed: int = None) -> np.ndarray:
+    def reset(self, config: Dict = None, seed: int = None):
         if config:
             self.maze_h      = config.get('maze_h',     self.maze_h)
             self.maze_w      = config.get('maze_w',     self.maze_w)
@@ -453,7 +453,8 @@ class MazeEnvironment:
         self.visit_grid[self.agent_r, self.agent_c] = 1.0
         self.total_episodes += 1
 
-        return self._encode_state()
+        # return self._encode_state()
+        return self._encode_state_discrete()
 
     # ----------------------------------------------------------
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, Dict]:

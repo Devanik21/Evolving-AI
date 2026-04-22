@@ -372,8 +372,12 @@ class IntrinsicCuriosity:
         self.beta = beta
         self.counts: Dict[tuple, int] = {}
 
-    def _key(self, state: np.ndarray) -> tuple:
-        return tuple((np.clip(state, 0, 1) * (self.bins - 1)).astype(int).tolist())
+    def _key(self, state) -> tuple:
+        # Support both discrete (r,c) tuples and continuous (52-D) vectors
+        if isinstance(state, tuple): return state
+        s_arr = np.array(state)
+        if s_arr.size <= 2: return tuple(s_arr.tolist())
+        return tuple((np.clip(s_arr, 0, 1) * (self.bins - 1)).astype(int).tolist())
 
     def bonus(self, state: np.ndarray) -> float:
         k = self._key(state)
@@ -571,7 +575,9 @@ class AgentBrain:
         # return int(np.argmax(q[0]))
         
         # --- NEW DISCRETE ACT ---
-        q_values = [self.q_table.get((state, a), 0.0) for a in range(self.action_size)]
+        # Ensure state is a hashable tuple for the Q-table
+        s_key = tuple(state) if isinstance(state, np.ndarray) else state
+        q_values = [self.q_table.get((s_key, a), 0.0) for a in range(self.action_size)]
         max_q = max(q_values)
         best_actions = [a for a, q in enumerate(q_values) if q == max_q]
         return random.choice(best_actions)
@@ -590,15 +596,18 @@ class AgentBrain:
 
         # --- NEW DYNA-Q LEARNING & HALLUCINATION ---
         # 1. Direct RL Update (Tabular Q-Learning)
-        best_next_q = max([self.q_table.get((next_state, a), 0.0) for a in range(self.action_size)])
-        current_q = self.q_table.get((state, action), 0.0)
+        s_key = tuple(state) if isinstance(state, np.ndarray) else state
+        ns_key = tuple(next_state) if isinstance(next_state, np.ndarray) else next_state
+        
+        best_next_q = max([self.q_table.get((ns_key, a), 0.0) for a in range(self.action_size)])
+        current_q = self.q_table.get((s_key, action), 0.0)
         
         target = augmented_reward + (0.0 if done else self.gamma * best_next_q)
         td_error = target - current_q
-        self.q_table[(state, action)] = current_q + self.learning_rate * td_error
+        self.q_table[(s_key, action)] = current_q + self.learning_rate * td_error
 
         # 2. Update Internal World Model (Perfect Memory)
-        self.model[(state, action)] = (next_state, augmented_reward)
+        self.model[(s_key, action)] = (ns_key, augmented_reward)
 
         # 3. Dyna-Q Planning (Hallucination)
         if len(self.model) > 0:
