@@ -66,8 +66,8 @@ st.markdown("""
 .stApp{background:radial-gradient(ellipse at 20% 10%,#0d0d2e 0%,#080818 55%,#0a1a18 100%);
  color:#c9d1d9;font-family:'Segoe UI',sans-serif;}
 * {box-sizing:border-box;}
-header[data-testid="stHeader"] {display:none !important;}
-.main .block-container {padding-top:1rem !important;}
+header[data-testid="stHeader"] {background:transparent !important;}
+.main .block-container {padding-top:2.5rem !important;}
 
 /* ─ shimmer title ─ */
 .ntitle{font-family:'JetBrains Mono',monospace;font-size:1.85rem;font-weight:700;
