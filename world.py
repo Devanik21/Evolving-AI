@@ -538,10 +538,17 @@ class MazeEnvironment:
         dynamic_penalty = -0.1 - (0.001 * visit_count)
         
         # 2. Curiosity Bonus (The "Fun" Factor)
-        # kappa = 0.5 as used in MazE.py. We use the same square root decay.
         intrinsic_reward = (0.5 / np.sqrt(max(1.0, visit_count)))
         
-        r += dynamic_penalty + intrinsic_reward
+        # 3. Compass Reward (Potential-Based Shaping)
+        compass_reward = 0.0
+        if moved:
+            if new_dist < old_dist:
+                compass_reward = 0.12  # Reward for getting closer
+            else:
+                compass_reward = -0.08 # Penalty for moving away
+        
+        r += dynamic_penalty + intrinsic_reward + compass_reward
 
         if trap_hit:
             r -= 5.0                       # Caught by trap

@@ -39,7 +39,6 @@ import pandas as pd
 import time, json, io, zipfile, math, random
 from collections import deque
 from typing import Dict, List, Optional, Tuple
-import math
 
 # ── Backend ────────────────────────────────────────────────
 try:
@@ -215,7 +214,7 @@ DEFAULT_CFG: Dict = {
     "gamma": 0.99, "epsilon_min": 0.04, "epsilon_decay": 0.997,
     "lr": 0.001, "batch_size": 64, "buffer_size": 50_000,
     "n_steps": 3, "icm_beta": 0.05, "tau": 0.005,
-    "h1": 256, "h2": 128, "h3": 64,
+    "h1": 512, "h2": 256, "h3": 128,
     "show_astar": False, "chart_points": 150,
     "override_curriculum": False, "manual_level": 1,
 }
