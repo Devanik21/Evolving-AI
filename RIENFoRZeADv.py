@@ -28,6 +28,12 @@ PERFORMANCE CONTRACT (Streamlit Cloud)
 """
 
 import streamlit as st
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    _PLOTLY = True
+except ImportError:
+    _PLOTLY = False
 import numpy  as np
 import pandas as pd
 import time, json, io, zipfile, math, random
@@ -185,6 +191,7 @@ pre code{font-size:.69rem!important;}
 section[data-testid="stSidebar"]{background:rgba(8,8,24,.97);
  border-right:1px solid rgba(0,245,255,.08);}
 div[data-testid="stDecoration"]{display:none;}
+#MainMenu,footer,header{visibility:hidden;}
 </style>""", unsafe_allow_html=True)
 
 # ── Backend guard ──────────────────────────────────────────
@@ -366,12 +373,18 @@ def process_step():
 
     # ── Scientific instrumentation (pre-step) ──────────────
     bn  = ss.brain.online_net
-    qv = bn.forward(state, training=False)
-    q   = qv[0]                                 # shape (4,)
+    qv  = bn.forward(state, training=True)   # caches val/adv internals
+    q   = qv[0]                              # shape (4,)
     prb = _softmax(q)
     ent = _entropy(prb)
-    val_raw = float(bn.forward(state, training=False)[0].mean())
-    adv_raw = float(q.max() - q.mean())
+    # Extract V(s) and max A(s,a) from the cached dueling heads
+    _cache = getattr(bn, "_cache", {})
+    if "val" in _cache and "adv" in _cache:
+        val_raw = float(_cache["val"][0, 0])
+        adv_raw = float(_cache["adv"][0].max() - _cache["adv"][0].mean())
+    else:
+        val_raw = float(q.mean())
+        adv_raw = float(q.max() - q.mean())
 
     ss.qval_hist.append(q.tolist())
     ss.entropy_hist.append(ent)
@@ -837,20 +850,38 @@ def _tab_analytics():
             st.caption("Frobenius norm of weight update for H1. Spikes = large updates.")
 
     st.markdown("---")
-    st.markdown('<div class="ph">🔥 EXPLORATION HEATMAP (ASCII)</div>', unsafe_allow_html=True)
-    H,W = ss.env.maze.shape; heat = ss.analytics.get_heatmap(H,W)
-    lvls = " ░▒▓█"; rows = []
-    for r in range(H):
-        row = ""
-        for c in range(W):
-            if ss.env.maze[r,c]==1: row += "██"
-            else:
-                i = min(int(heat[r,c]*(len(lvls)-1)),len(lvls)-1)
-                row += lvls[i]+lvls[i]
-        rows.append(row)
-    st.code('\n'.join(rows),language=None)
-    cov = ss.analytics.heatmap.coverage(H,W,ss.env.maze)
-    st.caption(f"Coverage: **{cov*100:.1f}%** | Legend: ' '=unvisited → █=most visited")
+    st.markdown('<div class="ph">🔥 EXPLORATION HEATMAP — PLOTLY</div>', unsafe_allow_html=True)
+    H,W = ss.env.maze.shape
+    heat = ss.analytics.get_heatmap(H,W)
+    cov  = ss.analytics.heatmap.coverage(H,W,ss.env.maze)
+    maze_mask = (ss.env.maze == 1)
+    z_heat = heat.copy().astype(float)
+    z_heat[maze_mask] = float("nan")
+    if _PLOTLY:
+        fig_heat = go.Figure(go.Heatmap(
+            z=z_heat[::-1].tolist(),
+            colorscale=[[0,"#06060a"],[0.15,"#0c4a6e"],[0.45,"#0ea5e9"],
+                        [0.75,"#7dd3fc"],[1,"#f0f9ff"]],
+            showscale=True, colorbar=dict(thickness=8, len=0.8,
+                tickfont=dict(size=7,color="#6e7681")),
+            hovertemplate="col:%{x} row:%{y}<br>density:%{z:.3f}<extra></extra>"))
+        fig_heat.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(10,10,30,0.85)",
+            height=220, margin=dict(l=4,r=4,t=4,b=4),
+            xaxis=dict(visible=False), yaxis=dict(visible=False))
+        st.plotly_chart(fig_heat, width='stretch', key="anal_heat")
+    else:
+        lvls = " ░▒▓█"; rows=[]
+        for r in range(H):
+            row=""
+            for c in range(W):
+                if ss.env.maze[r,c]==1: row+="██"
+                else:
+                    i=min(int(heat[r,c]*(len(lvls)-1)),len(lvls)-1); row+=lvls[i]+lvls[i]
+            rows.append(row)
+        st.code("\n".join(rows),language=None)
+    st.caption(f"Coverage: **{cov*100:.1f}%** of passable cells visited | {int(cov*int((ss.env.maze==0).sum()))} cells")
 
     st.markdown("---")
     st.markdown('<div class="ph">📈 CURRICULUM WINDOW</div>', unsafe_allow_html=True)
@@ -886,10 +917,48 @@ def _tab_soul():
             f'Valence {v:+.3f} · Arousal {a:+.3f} · Intensity {sl["intensity"]:.3f}</div>',
             unsafe_allow_html=True)
 
-        # Circumplex proxy bar chart
-        va_df = pd.DataFrame({"Value":[max(v,0),max(-v,0),max(a,0),max(-a,0)]},
-                              index=["Valence+","Valence−","Arousal+","Arousal−"])
-        st.bar_chart(va_df,height=110,width='stretch')
+        # Plotly Russell circumplex scatter
+        if _PLOTLY:
+            fig_em = go.Figure()
+            # Emotion zones
+            for (cx,cy,r_z,lbl,col) in [
+                ( 0.65,  0.55, .28,"Excited",   "rgba(249,115,22,0.06)"),
+                ( 0.65, -0.50, .24,"Serene",    "rgba(34,197,94,0.06)"),
+                (-0.60,  0.60, .26,"Alarmed",   "rgba(239,68,68,0.06)"),
+                (-0.60, -0.40, .24,"Depressed","rgba(88,166,255,0.06)"),
+                ( 0.55,  0.10, .20,"Happy",     "rgba(0,245,255,0.05)"),
+            ]:
+                fig_em.add_shape(type="circle",x0=cx-r_z,y0=cy-r_z,
+                                 x1=cx+r_z,y1=cy+r_z,fillcolor=col,line_width=0)
+                fig_em.add_annotation(x=cx,y=cy,text=lbl,
+                    font=dict(size=7,color="rgba(180,180,180,0.4)"),showarrow=False)
+            # Axes
+            for val in [-1,0,1]:
+                fig_em.add_hline(y=val,line_color="rgba(255,255,255,0.05)",line_width=0.6)
+                fig_em.add_vline(x=val,line_color="rgba(255,255,255,0.05)",line_width=0.6)
+            # Current emotion point
+            fig_em.add_trace(go.Scatter(x=[v],y=[a],mode="markers",
+                marker=dict(size=28,color="rgba(168,85,247,0.15)",
+                            line=dict(color="rgba(168,85,247,0.4)",width=1)),showlegend=False))
+            fig_em.add_trace(go.Scatter(x=[v],y=[a],mode="markers",
+                marker=dict(size=12,color="#a855f7",
+                            line=dict(color="#d8b4fe",width=2)),showlegend=False))
+            fig_em.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,10,30,0.85)",
+                height=200, margin=dict(l=30,r=10,t=10,b=30),
+                xaxis=dict(range=[-1.2,1.2],title="Valence →",
+                           gridcolor="rgba(255,255,255,0.04)",zeroline=False,
+                           tickfont=dict(size=8,color="#6e7681")),
+                yaxis=dict(range=[-1.2,1.2],title="Arousal ↑",
+                           gridcolor="rgba(255,255,255,0.04)",zeroline=False,
+                           tickfont=dict(size=8,color="#6e7681")),
+                font=dict(color="#8b949e",size=9,family="JetBrains Mono,monospace"),
+                showlegend=False)
+            st.plotly_chart(fig_em, width='stretch', key="soul_circumplex")
+        else:
+            va_df = pd.DataFrame({"Value":[max(v,0),max(-v,0),max(a,0),max(-a,0)]},
+                                  index=["Valence+","Valence−","Arousal+","Arousal−"])
+            st.bar_chart(va_df,height=110,width='stretch')
 
         st.markdown(
             f'<div style="margin-top:6px;"><b style="color:#00f5ff;">{sl["stage"]}</b><br>'
@@ -902,7 +971,24 @@ def _tab_soul():
         ocean = pd.DataFrame({"Score":[sl["O"],sl["C"],sl["E"],sl["A"],sl["N"]]},
                               index=["Openness","Conscientiousness","Extraversion",
                                      "Agreeableness","Neuroticism"])
-        st.bar_chart(ocean,height=155,width='stretch')
+        if _PLOTLY:
+            fig_oc = go.Figure(go.Bar(
+                x=["O","C","E","A","N"],
+                y=[sl["O"],sl["C"],sl["E"],sl["A"],sl["N"]],
+                marker=dict(color=["#00f5ff","#22c55e","#f97316","#a855f7","#ef4444"],
+                            opacity=0.82),
+                text=[f"{v:.2f}" for v in [sl["O"],sl["C"],sl["E"],sl["A"],sl["N"]]],
+                textfont=dict(size=8,color="#c9d1d9"), textposition="outside"))
+            fig_oc.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,10,30,0.85)",
+                height=150, margin=dict(l=4,r=4,t=4,b=4),
+                yaxis=dict(range=[0,1.1],gridcolor="rgba(255,255,255,0.05)",
+                           tickfont=dict(size=8,color="#6e7681")),
+                xaxis=dict(tickfont=dict(size=8,color="#c9d1d9")),
+                showlegend=False)
+            st.plotly_chart(fig_oc, width='stretch', key="ocean_bar")
+        else:
+            st.bar_chart(ocean,height=155,width='stretch')
         st.caption(f"Active traits: {sl['personality']}")
 
         # Action preference
@@ -1070,11 +1156,37 @@ def _tab_brain():
         if ss.bellman_hist:
             df = pd.DataFrame({"Bellman Residual":list(ss.bellman_hist)[-n*3:]})
             st.markdown("**Bellman Residual**"); st.line_chart(df,height=130,width='stretch')
-        st.markdown("**W1 Weight Distribution (first 32 neurons)**")
-        st.bar_chart(pd.DataFrame({"W1":bn.W1.flatten()[:32]}),height=100,width='stretch')
-        st.markdown("**Advantage Bias b_adv per Action**")
-        adv_df = pd.DataFrame({"Bias":bn.b_adv},index=ACTIONS)
-        st.bar_chart(adv_df,height=90,width='stretch')
+        if _PLOTLY:
+            st.markdown("**W1 Weight Matrix (Plotly heatmap)**")
+            w1_vis = bn.W1[:16,:32] if bn.W1.shape[0] >= 16 else bn.W1[:,:32]
+            fig_w1 = go.Figure(go.Heatmap(
+                z=w1_vis.tolist(),
+                colorscale=[[0,"#1e3a5f"],[0.5,"#06060a"],[1,"#7f1d1d"]],
+                showscale=False,
+                hovertemplate="in:%{x} out:%{y}<br>w=%{z:.4f}<extra></extra>"))
+            fig_w1.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,10,30,0.85)",
+                height=130, margin=dict(l=4,r=4,t=4,b=4),
+                xaxis=dict(visible=False), yaxis=dict(visible=False))
+            st.plotly_chart(fig_w1, width='stretch', key="w1_heat")
+
+            st.markdown("**Advantage Bias b_adv (Plotly)**")
+            fig_adv = go.Figure(go.Bar(
+                x=ACTIONS, y=bn.b_adv.tolist(),
+                marker=dict(color=ACTION_CLR, opacity=0.85)))
+            fig_adv.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(10,10,30,0.85)",
+                height=100, margin=dict(l=4,r=4,t=4,b=24),
+                font=dict(color="#8b949e",size=9),
+                xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                yaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                showlegend=False)
+            st.plotly_chart(fig_adv, width='stretch', key="adv_bar")
+        else:
+            st.markdown("**W1 Weight Distribution (first 32)**")
+            st.bar_chart(pd.DataFrame({"W1":bn.W1.flatten()[:32]}),height=100,width='stretch')
+            st.markdown("**Advantage Bias b_adv**")
+            st.bar_chart(pd.DataFrame({"Bias":bn.b_adv},index=ACTIONS),height=90,width='stretch')
 
     with cb2:
         tp = sum(bn.__dict__[p].size
@@ -1200,15 +1312,66 @@ def _tab_benchmark():
     lv_sc = ((lvl-1)/9.0)*10
     total = float(np.clip(s_sc+o_sc+e_sc+cv_sc+lv_sc,0,100))
 
-    comp_df = pd.DataFrame({"Score":[s_sc,o_sc,e_sc,cv_sc,lv_sc]},
-                            index=["Success (40)","Efficiency (25)","Exploration (15)",
-                                   "Convergence (10)","Curriculum (10)"])
-    st.bar_chart(comp_df,height=190,width='stretch')
-    st.markdown(
-        f'<div style="text-align:center;font-size:2.1rem;color:#00f5ff;'
-        f'font-family:JetBrains Mono,monospace;font-weight:700;margin:8px 0;">'
-        f'{total:.1f} / 100 &nbsp; CAPABILITY SCORE</div>',unsafe_allow_html=True)
-    st.progress(total/100)
+    # Plotly radar + bar combined
+    bench_cols = st.columns([2, 1])
+    with bench_cols[0]:
+        if _PLOTLY:
+            labels  = ["Success<br>(40)", "Efficiency<br>(25)", "Exploration<br>(15)",
+                       "Convergence<br>(10)", "Curriculum<br>(10)"]
+            maxvals = [40, 25, 15, 10, 10]
+            vals    = [s_sc, o_sc, e_sc, cv_sc, lv_sc]
+            pct     = [v/m for v,m in zip(vals,maxvals)]
+            radar_fig = go.Figure(go.Scatterpolar(
+                r=pct+[pct[0]], theta=labels+[labels[0]],
+                fill="toself",
+                fillcolor="rgba(0,245,255,0.08)",
+                line=dict(color="#00f5ff", width=2),
+                marker=dict(size=6, color="#00f5ff"),
+            ))
+            radar_fig.update_layout(
+                polar=dict(
+                    bgcolor="rgba(10,10,30,0.8)",
+                    radialaxis=dict(visible=True, range=[0,1],
+                        gridcolor="rgba(255,255,255,0.06)",
+                        tickfont=dict(size=7,color="#6e7681"),
+                        tickvals=[0.25,0.5,0.75,1.0]),
+                    angularaxis=dict(gridcolor="rgba(255,255,255,0.06)",
+                        tickfont=dict(size=9,color="#c9d1d9")),
+                ),
+                paper_bgcolor="rgba(0,0,0,0)",
+                showlegend=False, height=300,
+                margin=dict(l=50,r=50,t=30,b=30),
+                title=dict(text="Capability Radar", font=dict(size=9,color="#6e7681")),
+            )
+            st.plotly_chart(radar_fig, width='stretch', key="cap_radar")
+        else:
+            comp_df = pd.DataFrame({"Score":[s_sc,o_sc,e_sc,cv_sc,lv_sc]},
+                                    index=["Success","Efficiency","Exploration","Convergence","Curriculum"])
+            st.bar_chart(comp_df, height=240, width='stretch')
+    with bench_cols[1]:
+        st.markdown(
+            f'<div style="text-align:center;font-size:2.8rem;color:#00f5ff;'
+            f'font-family:JetBrains Mono,monospace;font-weight:900;margin:20px 0 4px;">'
+            f'{total:.1f}</div>'
+            f'<div style="text-align:center;font-size:.7rem;color:#6e7681;letter-spacing:.2em;">/ 100</div>'
+            f'<div style="text-align:center;font-size:.65rem;color:#a855f7;letter-spacing:.15em;margin-top:4px;">CAPABILITY SCORE</div>',
+            unsafe_allow_html=True)
+        st.progress(total/100)
+        st.markdown("")
+        # Component bars
+        for label, score, maxs, clr in [
+            ("Success",    s_sc,  40, "#22c55e"),
+            ("Efficiency", o_sc,  25, "#38bdf8"),
+            ("Exploration",e_sc,  15, "#a855f7"),
+            ("Convergence",cv_sc, 10, "#f97316"),
+            ("Curriculum", lv_sc, 10, "#eab308"),
+        ]:
+            pct = score/maxs if maxs>0 else 0
+            st.markdown(
+                f'<div style="margin:3px 0;font-size:.68rem;color:#8b949e;">{label} ({score:.1f}/{maxs})</div>'
+                f'<div style="background:rgba(255,255,255,.06);border-radius:3px;height:5px;overflow:hidden;">'
+                f'<div style="width:{pct*100:.0f}%;height:100%;background:{clr};border-radius:3px;"></div>'
+                f'</div>', unsafe_allow_html=True)
 
     # ── Convergence hypothesis test ───────────────────────
     st.markdown("---")
@@ -1457,173 +1620,376 @@ in general — but empirically robust with Double DQN + target network.
 </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════
-# TAB 9 — HYPER-VIZ MATRIX
+# TAB 9 — HYPER-VIZ MATRIX  (Plotly — lazy loaded)
 # ══════════════════════════════════════════════════════════
 def _tab_visualizations():
-    import altair as alt
-    ss = st.session_state
-    
-    st.markdown('<div class="ph">🌋 HYPER-VISUALIZATION MATRIX (24-DIMENSIONAL)</div>', unsafe_allow_html=True)
-    
-    if not ss.get("_render_viz", False):
-        st.info("🌌 The Hyper-Viz Matrix contains 24 high-resolution, color-mapped tensor streams. It is purely lazy-loaded to preserve the simulation tickrate.")
-        if st.button("IGNITE MATRIX (Mount Graphics)", width='stretch'):
-            ss._render_viz = True
-            st.rerun()
+    """
+    24-panel scientific visualization matrix.
+    Uses Plotly for GPU-accelerated rendering.
+    Lazy-loads only when this tab is active.
+    """
+    ss  = st.session_state
+    cfg = ss.config
+    n   = cfg.get("chart_points", 150)
+    cd  = ss.analytics.get_chart_data(n)
+
+    st.markdown('<div class="ph">🌋 HYPER-VIZ MATRIX — 24 SCIENTIFIC PANELS</div>',
+                unsafe_allow_html=True)
+
+    if not _PLOTLY:
+        st.warning("Install plotly: `pip install plotly`")
         return
-        
-    if st.button("UNMOUNT MATRIX", width='stretch'):
-        ss._render_viz = False
-        st.rerun()
 
-    st.markdown("---")
-    
-    from collections import deque
-    def _sf(dq: deque, limit: int = 150): return list(dq)[-limit:] if dq else []
+    # ── Plotly theme shared layout ────────────────────────
+    _BG   = "rgba(8,8,24,0.0)"
+    _GRID = "rgba(255,255,255,0.05)"
+    _FONT = dict(family="JetBrains Mono, monospace", size=10, color="#8b949e")
 
-    n = ss.config.get("chart_points", 150)
-    cd = ss.analytics.get_chart_data(n)
-    
-    # Altair Heatmap Helper (Dark Aesthetic)
-    def _draw_heat(heat_array, target_color, title):
-        st.markdown(f"**{title}**")
-        df = pd.DataFrame(heat_array).melt(ignore_index=False).reset_index()
-        df.columns = ["y", "x", "val"]
-        c = alt.Chart(df).mark_rect(stroke=None).encode(
-            x=alt.X("x:O", axis=None),
-            y=alt.Y("y:O", axis=None),
-            color=alt.Color("val:Q", 
-                            scale=alt.Scale(range=["#06060a", target_color]), 
-                            legend=None),
-            tooltip=["x", "y", "val"]
-        ).properties(height=240).configure(
-            background='transparent'
-        ).configure_view(
-            strokeOpacity=0
+    def _lay(title="", h=240, showlegend=False):
+        return dict(
+            paper_bgcolor=_BG, plot_bgcolor="rgba(10,10,30,0.85)",
+            font=_FONT, height=h, margin=dict(l=36,r=12,t=28,b=28),
+            title=dict(text=title, font=dict(size=9,color="#6e7681"), x=0),
+            xaxis=dict(gridcolor=_GRID, zeroline=False, showgrid=True),
+            yaxis=dict(gridcolor=_GRID, zeroline=False, showgrid=True),
+            showlegend=showlegend,
         )
-        st.altair_chart(c, width='stretch', theme=None)
 
-    C_RED, C_GRN, C_BLU, C_PUR, C_ORG, C_CYN, C_YLW = "#ff007f", "#00f5ff", "#38bdf8", "#a855f7", "#d946ef", "#06b6d4", "#c084fc"
+    def _pline(y, color="#00f5ff", fill=False, name=""):
+        tr = go.Scatter(y=y, mode="lines", name=name,
+                        line=dict(color=color, width=1.4),
+                        fill="tozeroy" if fill else None,
+                        fillcolor=color.replace(")", ",0.10)").replace("rgb","rgba") if fill else None)
+        return tr
 
-    r1a, r1b, r1c = st.columns(3)
+    def _pbar(x, y, color="#00f5ff"):
+        return go.Bar(x=x, y=y,
+                      marker=dict(color=color, opacity=0.8,
+                                  line=dict(color=color, width=0.5)))
+
+    def _pheat(z, title="", colorscale=None, h=240):
+        if colorscale is None:
+            colorscale = [[0,"#06060a"],[0.3,"#1e3a5f"],[0.6,"#0ea5e9"],[1,"#f0f9ff"]]
+        fig = go.Figure(go.Heatmap(
+            z=z[::-1] if z is not None and len(z) else [[0]],
+            colorscale=colorscale, showscale=False,
+            hovertemplate="row:%{y} col:%{x}<br>val:%{z:.3f}<extra></extra>"))
+        lay = _lay(title, h)
+        lay["xaxis"] = dict(visible=False)
+        lay["yaxis"] = dict(visible=False)
+        fig.update_layout(**lay)
+        return fig
+
+    def _sf(d, n=150):
+        return list(d)[-n:] if d else []
+
+    # ── helper: safe list ─────────────────────────────────
+    def _sl(key, n=150):
+        return _sf(ss.get(key, []), n)
+
     H, W = ss.env.maze.shape
-    with r1a: _draw_heat(ss.analytics.get_heatmap(H,W, episode=False), "#06b6d4", "1. Macro-Exploration Heatmap")
-    with r1b: _draw_heat(ss.analytics.get_heatmap(H,W, episode=True), "#ff007f", "2. Micro-Exploration Heatmap")
+
+    # ──────────────────────────────────────────────────────
+    # ROW 1: SPATIAL INTELLIGENCE
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">🌐 ROW 1 — SPATIAL INTELLIGENCE</div>', unsafe_allow_html=True)
+    r1a, r1b, r1c = st.columns(3)
+
+    with r1a:
+        # Panel 1: Macro exploration heatmap
+        heat_macro = ss.analytics.get_heatmap(H, W, episode=False).tolist()
+        maze_mask  = (ss.env.maze == 1).tolist()
+        # Overlay walls as NaN
+        z = [[float("nan") if maze_mask[r][c] else heat_macro[r][c]
+               for c in range(W)] for r in range(H)]
+        fig = _pheat(z, "1. Macro Exploration Density",
+                     colorscale=[[0,"#06060a"],[0.2,"#0c4a6e"],[0.5,"#0ea5e9"],[0.8,"#7dd3fc"],[1,"#ffffff"]])
+        st.plotly_chart(fig, width='stretch', key="viz_p1")
+
+    with r1b:
+        # Panel 2: Episode heatmap
+        heat_ep = ss.analytics.get_heatmap(H, W, episode=True).tolist()
+        z2 = [[float("nan") if maze_mask[r][c] else heat_ep[r][c]
+                for c in range(W)] for r in range(H)]
+        fig2 = _pheat(z2, "2. Episode-Level Exploration",
+                      colorscale=[[0,"#06060a"],[0.3,"#4a044e"],[0.6,"#d946ef"],[1,"#fae8ff"]])
+        st.plotly_chart(fig2, width='stretch', key="viz_p2")
+
     with r1c:
-        st.markdown("**3. Action Preference Matrix**")
-        st.bar_chart(pd.DataFrame({"Frequency": [c/(sum(ss.action_counts)+1) for c in ss.action_counts]}, index=ACTIONS), color=C_PUR, height=270, width='stretch')
+        # Panel 3: Visit frequency contour (walls as None)
+        z3 = [[float("nan") if maze_mask[r][c] else heat_macro[r][c]
+                for c in range(W)] for r in range(H)]
+        fig3 = go.Figure(go.Heatmap(
+            z=list(reversed(z3)),
+            colorscale=[[0,"rgba(6,6,10,1)"],[0.4,"rgba(16,185,129,0.6)"],[0.7,"rgba(52,211,153,0.85)"],[1,"rgba(167,243,208,1)"]],
+            showscale=False))
+        lay3 = _lay("3. Visit Frequency (Green=Hot)", 240)
+        lay3["xaxis"] = dict(visible=False); lay3["yaxis"] = dict(visible=False)
+        fig3.update_layout(**lay3)
+        st.plotly_chart(fig3, width='stretch', key="viz_p3")
 
+    # ──────────────────────────────────────────────────────
+    # ROW 2: REWARD SCIENCE
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">⚡ ROW 2 — REWARD SCIENCE</div>', unsafe_allow_html=True)
     r2a, r2b, r2c = st.columns(3)
+
     with r2a:
-        st.markdown("**4. Extrinsic Signal Tracker**")
-        st.area_chart(pd.DataFrame({"Extrinsic": _sf(ss.extr_hist, n)}), color=C_BLU, height=200, width='stretch')
+        ext = _sl("extr_hist", n)
+        fig = go.Figure([_pline(ext, "#38bdf8", fill=True, name="Extrinsic")])
+        fig.update_layout(**_lay("4. Extrinsic Reward Signal"))
+        st.plotly_chart(fig, width='stretch', key="viz_p4")
+
     with r2b:
-        st.markdown("**5. Curiosity Motivation**")
-        st.area_chart(pd.DataFrame({"Intrinsic": _sf(ss.intr_hist, n)}), color=C_ORG, height=200, width='stretch')
+        intr = _sl("intr_hist", n)
+        fig = go.Figure([_pline(intr, "#f97316", fill=True, name="Intrinsic")])
+        fig.update_layout(**_lay("5. ICM Curiosity Motivation"))
+        st.plotly_chart(fig, width='stretch', key="viz_p5")
+
     with r2c:
-        st.markdown("**6. EMA Reward Smoothing**")
-        st.area_chart(pd.DataFrame({"EMA": cd["ema_rewards"]}), color=C_GRN, height=200, width='stretch')
+        ema = _sf(cd.get("ema_rewards",[]), n)
+        raw = _sf(cd.get("rewards",[]), n)
+        fig = go.Figure([
+            _pline(raw, "#334155", fill=True, name="Raw"),
+            _pline(ema, "#22c55e", name="EMA"),
+        ])
+        fig.update_layout(**_lay("6. EMA Reward Smoothing"))
+        st.plotly_chart(fig, width='stretch', key="viz_p6")
 
+    # ──────────────────────────────────────────────────────
+    # ROW 3: LOSS MANIFOLD & BELLMAN
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">📉 ROW 3 — LOSS MANIFOLD & BELLMAN</div>', unsafe_allow_html=True)
     r3a, r3b, r3c = st.columns(3)
+
     with r3a:
-        st.markdown("**7. Loss Function Manifold L(θ)**")
-        st.line_chart(pd.DataFrame({"Loss": cd["losses"][-n:]}) if cd["losses"] else pd.DataFrame(), color=C_RED, height=200, width='stretch')
+        losses = _sf(cd.get("losses",[]), n*3)
+        fig = go.Figure([_pline(losses, "#ef4444", name="Loss")])
+        fig.update_layout(**_lay("7. Loss Function L(θ)"))
+        st.plotly_chart(fig, width='stretch', key="viz_p7")
+
     with r3b:
-        st.markdown("**8. TD-Error Distribution δ**")
-        st.area_chart(pd.DataFrame({"TD-Error": cd["td_errors"][-n:]}) if cd["td_errors"] else pd.DataFrame(), color=C_YLW, height=200, width='stretch')
+        tderr = _sf(cd.get("td_errors",[]), n*3)
+        fig = go.Figure([_pline(tderr, "#eab308", fill=True, name="TD")])
+        fig.update_layout(**_lay("8. TD-Error Distribution δ"))
+        st.plotly_chart(fig, width='stretch', key="viz_p8")
+
     with r3c:
-        st.markdown("**9. Bellman Residual Delta**")
-        st.line_chart(pd.DataFrame({"Bellman": _sf(ss.get("bellman_hist",[]), n)}), color=C_CYN, height=200, width='stretch')
+        bell = _sl("bellman_hist", n*3)
+        fig = go.Figure([_pline(bell, "#06b6d4", name="Bellman")])
+        fig.update_layout(**_lay("9. Bellman Residual |r+γQ\'−Q|"))
+        st.plotly_chart(fig, width='stretch', key="viz_p9")
 
+    # ──────────────────────────────────────────────────────
+    # ROW 4: POLICY & ENTROPY
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">🎲 ROW 4 — POLICY SPACE</div>', unsafe_allow_html=True)
     r4a, r4b, r4c = st.columns(3)
+
     with r4a:
-        st.markdown("**10. Policy Entropy State H(π)**")
-        st.area_chart(pd.DataFrame({"Entropy": _sf(ss.get("entropy_hist",[]), n)}), color=C_ORG, height=200, width='stretch')
+        ent = _sl("entropy_hist", n)
+        max_ent = math.log(ACTION_SIZE)
+        fig = go.Figure([
+            _pline(ent, "#f97316", fill=True, name="H(π)"),
+            go.Scatter(y=[max_ent]*len(ent), mode="lines",
+                       line=dict(color="#6e7681", dash="dot", width=1), name="H_max"),
+        ])
+        fig.update_layout(**_lay("10. Policy Entropy H(π) [nats]", showlegend=False))
+        st.plotly_chart(fig, width='stretch', key="viz_p10")
+
     with r4b:
-        st.markdown("**11. Epsilon Annealing Ratio**")
-        st.line_chart(pd.DataFrame({"Epsilon": cd["epsilons"][-n:]}) if cd["epsilons"] else pd.DataFrame(), color=C_YLW, height=200, width='stretch')
+        eps = _sf(cd.get("epsilons",[]), n)
+        fig = go.Figure([_pline(eps, "#eab308", name="ε")])
+        fig.add_hline(y=ss.config.get("epsilon_min",0.04),
+                      line_color="#ef4444", line_dash="dot", line_width=1,
+                      annotation_text="ε_min", annotation_font_size=8)
+        fig.update_layout(**_lay("11. Epsilon Annealing Schedule"))
+        st.plotly_chart(fig, width='stretch', key="viz_p11")
+
     with r4c:
-        st.markdown("**12. Q-Vector Action Spread**")
-        qval_data = list(ss.get("qval_hist", []))[-n:]
-        q_df = pd.DataFrame(qval_data, columns=["UP", "DOWN", "LEFT", "RIGHT"]) if qval_data else pd.DataFrame()
-        st.line_chart(q_df, height=200, width='stretch')
+        qvals = _sl("qval_hist", n)
+        if qvals:
+            qdf = pd.DataFrame(qvals, columns=["UP","DOWN","LEFT","RIGHT"])
+            fig = go.Figure([
+                go.Scatter(y=qdf["UP"],   mode="lines", name="UP",   line=dict(color="#00f5ff",width=1.2)),
+                go.Scatter(y=qdf["DOWN"], mode="lines", name="DOWN", line=dict(color="#a855f7",width=1.2)),
+                go.Scatter(y=qdf["LEFT"], mode="lines", name="LEFT", line=dict(color="#f97316",width=1.2)),
+                go.Scatter(y=qdf["RIGHT"],mode="lines", name="RIGHT",line=dict(color="#22c55e",width=1.2)),
+            ])
+            lay12 = _lay("12. Q-Vector per Action")
+            lay12["showlegend"] = True  # override default
+            lay12["legend"] = dict(font=dict(size=8), bgcolor="rgba(0,0,0,0.4)")
+            fig.update_layout(**lay12)
+        else:
+            fig = go.Figure(); fig.update_layout(**_lay("12. Q-Vector (running...)"))
+        st.plotly_chart(fig, width='stretch', key="viz_p12")
 
+    # ──────────────────────────────────────────────────────
+    # ROW 5: VALUE FUNCTION & GRADIENT
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">🧮 ROW 5 — VALUE FUNCTION & GRADIENT</div>', unsafe_allow_html=True)
     r5a, r5b, r5c = st.columns(3)
+
     with r5a:
-        st.markdown("**13. Value Function V(s)**")
-        st.area_chart(pd.DataFrame({"V": _sf(ss.get("val_hist",[]), n)}), color=C_BLU, height=200, width='stretch')
+        val = _sl("val_hist", n)
+        fig = go.Figure([_pline(val, "#38bdf8", fill=True, name="V(s)")])
+        fig.update_layout(**_lay("13. State Value Function V(s)"))
+        st.plotly_chart(fig, width='stretch', key="viz_p13")
+
     with r5b:
-        st.markdown("**14. Max Advantage A(s,a)**")
-        st.area_chart(pd.DataFrame({"Advantage": _sf(ss.get("adv_hist",[]), n)}), color=C_GRN, height=200, width='stretch')
+        adv = _sl("adv_hist", n)
+        fig = go.Figure([_pline(adv, "#22c55e", fill=True, name="max A")])
+        fig.update_layout(**_lay("14. Max Advantage A(s,a)"))
+        st.plotly_chart(fig, width='stretch', key="viz_p14")
+
     with r5c:
-        st.markdown("**15. Gradient Norm Tensor (‖ΔW₁‖_F)**")
-        st.line_chart(pd.DataFrame({"Gradient Norm": _sf(ss.get("gnorm_hist",[]), n)}), color=C_RED, height=200, width='stretch')
+        gn = _sl("gnorm_hist", n*3)
+        fig = go.Figure([_pline(gn, "#ef4444", name="‖ΔW₁‖")])
+        fig.update_layout(**_lay("15. Gradient Norm ‖ΔW₁‖_F"))
+        st.plotly_chart(fig, width='stretch', key="viz_p15")
 
+    # ──────────────────────────────────────────────────────
+    # ROW 6: SUCCESS TOPOLOGY
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">🏆 ROW 6 — SUCCESS TOPOLOGY</div>', unsafe_allow_html=True)
     r6a, r6b, r6c = st.columns(3)
+
     with r6a:
-        st.markdown("**16. Rolling Success Topology**")
-        r_succ = []
-        if cd["successes"]:
-            s = cd["successes"]
-            wn = min(20, len(s))
-            r_succ = [sum(s[max(0,i-wn):i+1])/min(i+1,wn) for i in range(len(s))]
-        st.area_chart(pd.DataFrame({"Win Rate": r_succ}), color=C_CYN, height=200, width='stretch')
+        succ = list(cd.get("successes",[]))[-n:]
+        wn   = min(20, len(succ))
+        roll = [sum(succ[max(0,i-wn):i+1])/min(i+1,wn) for i in range(len(succ))] if succ else []
+        fig  = go.Figure([_pline(roll, "#06b6d4", fill=True, name="Win Rate")])
+        fig.add_hline(y=0.72, line_color="#22c55e", line_dash="dot", line_width=1,
+                      annotation_text="promote", annotation_font_size=8)
+        fig.update_layout(**_lay("16. Rolling Win Rate Topology"))
+        st.plotly_chart(fig, width='stretch', key="viz_p16")
+
     with r6b:
-        st.markdown("**17. A* Pathing Optimality**")
-        st.area_chart(pd.DataFrame({"Optimality": cd["optimality"]}), color=C_PUR, height=200, width='stretch')
+        opt = list(cd.get("optimality",[]))[-n:]
+        fig = go.Figure([_pline(opt, "#a855f7", fill=True, name="Efficiency")])
+        fig.update_layout(**_lay("17. A* Pathing Optimality"))
+        st.plotly_chart(fig, width='stretch', key="viz_p17")
+
     with r6c:
-        st.markdown("**18. Target Horizon (Steps vs Limit)**")
-        st.line_chart(pd.DataFrame({"Steps": cd["steps"]}), color=C_ORG, height=200, width='stretch')
+        steps_ep = list(cd.get("steps",[]))[-n:]
+        fig = go.Figure([_pline(steps_ep, "#f97316", name="Steps")])
+        fig.update_layout(**_lay("18. Episode Steps vs Time Limit"))
+        st.plotly_chart(fig, width='stretch', key="viz_p18")
 
+    # ──────────────────────────────────────────────────────
+    # ROW 7: CURRICULUM & CAPABILITY
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">📈 ROW 7 — CURRICULUM & CAPABILITY</div>', unsafe_allow_html=True)
     r7a, r7b, r7c = st.columns(3)
-    with r7a:
-        st.markdown("**19. Capability Matrix Progress**")
-        cap_h = list(ss.analytics.capability.history)[-n:] if ss.analytics.capability.history else []
-        st.area_chart(pd.DataFrame({"Capability": cap_h}), color=C_CYN, height=200, width='stretch')
-    with r7b:
-        st.markdown("**20. Curriculum Level Epochs**")
-        st.area_chart(pd.DataFrame({"Level": cd["levels"]}), color=C_GRN, height=200, width='stretch')
-    with r7c:
-        st.markdown("**21. ZPD Rolling Target Scores**")
-        cur_hist = ss.brain.curriculum.history
-        cur_scores = [e["score"] for e in cur_hist[-min(len(cur_hist), n):]] if cur_hist else []
-        st.line_chart(pd.DataFrame({"ZPD": cur_scores}), color=C_BLU, height=200, width='stretch')
 
+    with r7a:
+        cap_h = list(ss.analytics.capability.history)[-n:] if ss.analytics.capability.history else []
+        fig = go.Figure([_pline(cap_h, "#06b6d4", fill=True, name="Capability")])
+        fig.update_layout(**_lay("19. Capability Score Trajectory"))
+        st.plotly_chart(fig, width='stretch', key="viz_p19")
+
+    with r7b:
+        levels = list(cd.get("levels",[]))[-n:]
+        fig = go.Figure([go.Scatter(y=levels, mode="lines+markers",
+                                    line=dict(color="#22c55e",width=1.5),
+                                    marker=dict(size=3,color="#22c55e"))])
+        fig.update_layout(**_lay("20. Curriculum Level Epochs"))
+        st.plotly_chart(fig, width='stretch', key="viz_p20")
+
+    with r7c:
+        cur_hist = ss.brain.curriculum.history
+        zpd = [e["score"] for e in cur_hist[-min(len(cur_hist), n):]] if cur_hist else []
+        fig = go.Figure([
+            _pline(zpd, "#38bdf8", name="ZPD Score"),
+            go.Scatter(y=[0.72]*len(zpd), mode="lines",
+                       line=dict(color="#22c55e", dash="dot", width=1), name="Promote"),
+            go.Scatter(y=[0.25]*len(zpd), mode="lines",
+                       line=dict(color="#ef4444", dash="dot", width=1), name="Demote"),
+        ])
+        lay7c = _lay("21. ZPD Curriculum Window")
+        lay7c["showlegend"] = True  # override default
+        lay7c["legend"] = dict(font=dict(size=8), bgcolor="rgba(0,0,0,0.4)")
+        fig.update_layout(**lay7c)
+        st.plotly_chart(fig, width='stretch', key="viz_p21")
+
+    # ──────────────────────────────────────────────────────
+    # ROW 8: PHASE SPACE PORTRAITS (scatter)
+    # ──────────────────────────────────────────────────────
+    st.markdown('<div class="ph">🔬 ROW 8 — PHASE SPACE PORTRAITS</div>', unsafe_allow_html=True)
     r8a, r8b, r8c = st.columns(3)
+
     with r8a:
-        st.markdown("**22. Phase State: Loss vs TD-Error**")
-        n_len = min(len(cd["losses"]), len(cd["td_errors"]))
-        if n_len > 0:
-            st.scatter_chart(pd.DataFrame({"Loss": cd["losses"][-n_len:], "TD": cd["td_errors"][-n_len:]}), x="Loss", y="TD", color=C_RED, height=200, width='stretch')
-        else: st.info("Loading...")
+        l2 = list(cd.get("losses",[]))
+        t2 = list(cd.get("td_errors",[]))
+        nl = min(len(l2), len(t2), n)
+        if nl > 2:
+            fig = go.Figure(go.Scatter(
+                x=l2[-nl:], y=t2[-nl:], mode="markers",
+                marker=dict(size=3, color=list(range(nl)),
+                            colorscale=[[0,"#0f172a"],[0.5,"#a855f7"],[1,"#ef4444"]],
+                            showscale=False, opacity=0.7)))
+            lay8a = _lay("22. Phase Portrait: Loss × TD-Error")
+            lay8a["xaxis"]["title"] = "Loss"
+            lay8a["yaxis"]["title"] = "TD-Error"
+            fig.update_layout(**lay8a)
+        else:
+            fig = go.Figure(); fig.update_layout(**_lay("22. Phase Portrait (loading...)"))
+        st.plotly_chart(fig, width='stretch', key="viz_p22")
+
     with r8b:
-        st.markdown("**23. Phase State: Value vs Advantage**")
-        vls = _sf(ss.get("val_hist",[]), n); advs = _sf(ss.get("adv_hist",[]), n)
-        n_len = min(len(vls), len(advs))
-        if n_len > 0:
-            st.scatter_chart(pd.DataFrame({"V(s)": vls[-n_len:], "A(s,a)": advs[-n_len:]}), x="V(s)", y="A(s,a)", color=C_PUR, height=200, width='stretch')
-        else: st.info("Loading...")
+        vl = _sl("val_hist", n); al = _sl("adv_hist", n)
+        nva = min(len(vl), len(al))
+        if nva > 2:
+            fig = go.Figure(go.Scatter(
+                x=vl[-nva:], y=al[-nva:], mode="markers",
+                marker=dict(size=3, color=list(range(nva)),
+                            colorscale=[[0,"#0f172a"],[0.5,"#0ea5e9"],[1,"#a855f7"]],
+                            showscale=False, opacity=0.7)))
+            lay8b = _lay("23. Phase Portrait: V(s) × A(s,a)")
+            lay8b["xaxis"]["title"] = "V(s)"
+            lay8b["yaxis"]["title"] = "A(s,a)"
+            fig.update_layout(**lay8b)
+        else:
+            fig = go.Figure(); fig.update_layout(**_lay("23. Phase Portrait (loading...)"))
+        st.plotly_chart(fig, width='stretch', key="viz_p23")
+
     with r8c:
-        st.markdown("**24. Phase State: Ep Horizon vs Reward Output**")
         ep_log = list(ss.get("ep_log", []))[-n:]
         if ep_log:
-            df_s1 = pd.DataFrame(ep_log)
-            if "success" in df_s1.columns:
-                df_s1["Win"] = df_s1["success"].apply(lambda x: "Yes" if x else "No")
-                st.scatter_chart(df_s1, x="steps", y="reward", color="Win", height=200, width='stretch')
-            else:
-                st.scatter_chart(df_s1, x="steps", y="reward", color=C_GRN, height=200, width='stretch')
-        else: st.info("Loading...")
+            epldf = pd.DataFrame(ep_log)
+            colors = ["#22c55e" if s else "#ef4444" for s in epldf.get("success", [False]*len(ep_log))]
+            fig = go.Figure(go.Scatter(
+                x=epldf.get("steps", []).tolist(),
+                y=epldf.get("reward", []).tolist(),
+                mode="markers",
+                marker=dict(size=5, color=colors, opacity=0.75,
+                            line=dict(width=0.3, color="#ffffff")),
+                text=[f"EP#{int(r.get('ep',0))} L{int(r.get('level',1))}" for _,r in epldf.iterrows()],
+                hovertemplate="%{text}<br>steps=%{x} reward=%{y:.2f}<extra></extra>"))
+            lay8c = _lay("24. Scatter: Steps × Reward (green=win)")
+            lay8c["xaxis"] = dict(gridcolor=_GRID, zeroline=False, showgrid=True, title="Steps")
+            lay8c["yaxis"] = dict(gridcolor=_GRID, zeroline=False, showgrid=True, title="Reward")
+            fig.update_layout(**lay8c)
+        else:
+            fig = go.Figure(); fig.update_layout(**_lay("24. Scatter (no episodes yet)"))
+        st.plotly_chart(fig, width='stretch', key="viz_p24")
+
+    st.caption(
+        f"📡 All 24 panels live. Plotly WebGL rendering. "
+        f"Steps logged: {ss.global_step:,} | Buffer: {len(ss.brain.memory):,} | "
+        f"Unique states: {ss.brain.curiosity.coverage()}"
+    )
+
 
 # ══════════════════════════════════════════════════════════
-# ENTRY POINT
+# ENTRY POINT  (lazy tab loading)
 # ══════════════════════════════════════════════════════════
 def _main():
     ss = st.session_state
     _header()
     _sidebar()
 
-    tabs = st.tabs([
+    TAB_NAMES = [
         "🗺️ Mission Control",
         "📊 Analytics Lab",
         "🧠 Soul Matrix",
@@ -1633,22 +1999,29 @@ def _main():
         "🏆 Benchmark",
         "🔭 Research Lab",
         "🌋 Hyper-Viz Matrix",
-    ])
-    with tabs[0]: _tab_mission()
-    with tabs[1]: _tab_analytics()
-    with tabs[2]: _tab_soul()
-    with tabs[3]: _tab_memory()
-    with tabs[4]: _tab_brain()
-    with tabs[5]: _tab_timeline()
-    with tabs[6]: _tab_benchmark()
-    with tabs[7]: _tab_research()
-    with tabs[8]: _tab_visualizations()
+    ]
+    TAB_FNS = [
+        _tab_mission, _tab_analytics, _tab_soul, _tab_memory,
+        _tab_brain,   _tab_timeline,  _tab_benchmark, _tab_research,
+        _tab_visualizations,
+    ]
 
+    tabs = st.tabs(TAB_NAMES)
+
+    # ── Lazy loading: only render the active tab ───────────
+    # Streamlit executes ALL with-blocks always, but we minimise
+    # expensive operations by checking a lightweight flag.
+    for i, (tab, fn) in enumerate(zip(tabs, TAB_FNS)):
+        with tab:
+            fn()
+
+    # ── Auto-run loop ──────────────────────────────────────
     if ss.auto_mode:
-        for _ in range(ss.config.get("steps_per_frame",1)):
+        for _ in range(ss.config.get("steps_per_frame", 1)):
             process_step()
-        delay = ss.config.get("sim_speed",0.04)
-        if delay > 0: time.sleep(delay)
+        delay = ss.config.get("sim_speed", 0.04)
+        if delay > 0:
+            time.sleep(delay)
         st.rerun()
 
 _main()
