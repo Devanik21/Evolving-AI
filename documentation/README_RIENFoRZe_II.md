@@ -1,4 +1,3 @@
-
 # RIENFoRZe — II
 ### Project A.L.I.V.E. NEXUS · 52-Dimensional Advanced Architecture · April 2026
 
@@ -473,6 +472,51 @@ The following table maps each RIENFoRZe-II component to the question it addresse
 | Warm start (0.7) | Does reducing random burn-in accelerate useful early learning? |
 | Numerical shields | Are weight/Q clamps necessary for stability in long runs? |
 | Super Brain Mode | Does goal-contingent planning acceleration improve success rates? |
+
+---
+
+## Learning Rate Scheduler — Plateau Detection
+
+The `LRScheduler` class monitors the rolling average reward and reduces the learning rate when a plateau is detected. This is an adaptive meta-learning mechanism operating on top of the Adam optimizer.
+
+### Plateau Criterion
+
+The best-ever average reward is tracked. If the current average reward does not improve by more than a tolerance threshold for `patience` consecutive episodes, the learning rate is halved:
+
+```math
+\eta_{t+1} = \begin{cases}
+\eta_t & \text{if } \bar{r}_t > \bar{r}^* + 10^{-4} \\
+\max(\eta_{\min}, \eta_t \cdot 0.5) & \text{if wait} \geq \text{patience}
+\end{cases}
+```
+
+where wait counts consecutive non-improving episodes. Parameters: patience = 100, factor = 0.5, min\_lr = 1e-5.
+
+### Interaction with Dyna-Q
+
+Because Dyna-Q planning steps run at a fixed learning rate (same as the real-step rate), the LR reduction affects both real and simulated updates simultaneously. This can be beneficial: when the agent is stuck on a plateau, reducing the LR for both real and simulated steps may allow it to converge toward a local optimum without oscillating around it.
+
+---
+
+## N-Step Returns — Retained from RIENFoRZe-I
+
+The N-step buffer is retained in RIENFoRZe-II. The N-step return augments the single-step Bellman target with a 3-step lookahead:
+
+```math
+G_t^{(3)} = r_t + \gamma r_{t+1} + \gamma^2 r_{t+2} + \gamma^3 \max_{a'} Q_{\text{target}}(s_{t+3}, a')
+```
+
+N-step returns reduce the variance of the TD estimate relative to TD(0), at the cost of slightly increased bias when the bootstrapped Q-value is inaccurate. With Dyna-Q planning improving Q-value accuracy rapidly, the bootstrapping bias of 3-step returns decreases faster than in RIENFoRZe-I.
+
+The N-step buffer and Dyna-Q planning operate on complementary timescales: N-step returns provide richer credit assignment within a single trajectory, while Dyna-Q propagates value information backward through the stored model.
+
+---
+
+## Segment Tree PER — Unchanged from RIENFoRZe-I
+
+The Prioritized Experience Replay segment tree implementation is identical to RIENFoRZe-I. The key interaction in RIENFoRZe-II: Dyna-Q planning steps do **not** add transitions to the PER buffer. Only real environment steps (via the N-step buffer) contribute to PER. Simulated transitions are sampled directly from the world model and update the neural network, bypassing PER entirely.
+
+This separation is intentional: PER is designed to prioritize real observations by temporal-difference error. Simulated observations (from a perfect deterministic model) would all have low TD error after the first visit, and would crowd out high-priority real transitions.
 
 ---
 
