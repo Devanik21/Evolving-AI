@@ -1,0 +1,39 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+
+\title{Mathematical Formulations of A.L.I.V.E. NEXUS}
+\author{Devanik}
+\date{April 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This document formalizes the mathematical underpinnings of the A.L.I.V.E. NEXUS project.
+
+\section{Reinforcement Learning Engine}
+\subsection{Dueling DQN}
+The Q-value function is decomposed into a value stream $V(s)$ and an advantage stream $A(s, a)$:
+\begin{equation}
+Q(s, a; \theta, \alpha, \beta) = V(s; \theta, \beta) + \left( A(s, a; \theta, \alpha) - \frac{1}{|\mathcal{A}|} \sum_{a'} A(s, a'; \theta, \alpha) \right)
+\end{equation}
+
+\subsection{N-Step Returns}
+The $N$-step return is given by:
+\begin{equation}
+G_t^{(n)} = \sum_{k=0}^{n-1} \gamma^k r_{t+k} + \gamma^n \max_{a'} Q_{\text{target}}(s_{t+n}, a')
+\end{equation}
+
+\subsection{Prioritized Experience Replay}
+Sampling probability for transition $i$:
+\begin{equation}
+P(i) = \frac{p_i^{\alpha}}{\sum_j p_j^{\alpha}}
+\end{equation}
+With importance-sampling weights:
+\begin{equation}
+w_i = \left( \frac{1}{N \cdot P(i)} \right)^{\beta}
+\end{equation}
+
+\end{document}
