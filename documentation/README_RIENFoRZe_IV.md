@@ -585,3 +585,23 @@ where pi*(s) is 1 at the greedy action and 0 elsewhere. As the Q-table converges
 
 *RIENFoRZe-IV — Tabular Dyna-Q Edition — April 2026*
 *A deliberate departure from approximation. Proof of concept that deterministic environments may be better served by exact methods.*
+
+
+---
+
+## Attribution
+
+**Author:** Devanik (GitHub: [Devanik21](https://github.com/Devanik21))
+**Repository:** [Evolving-AI](https://github.com/Devanik21/Evolving-AI) · Project A.L.I.V.E. NEXUS · April 2026
+**Affiliation:** Electronics & Communication Engineering, NIT Agartala (2026) · Samsung ISWDP Fellow, IISc (98.58th percentile)
+
+This document and all associated source code are the original work of Devanik. The RIENFoRZe series (versions I–IV), the A.L.I.V.E. NEXUS cognitive architecture, and all mathematical formulations, experimental designs, and implementation decisions documented here were conceived and developed independently.
+
+If you build on, reference, or adapt any part of this work, please cite the original repository:
+
+```
+Devanik. Project A.L.I.V.E. NEXUS — RIENFoRZe Series. GitHub, April 2026.
+https://github.com/Devanik21/Evolving-AI
+```
+
+Licensed under the **Apache License 2.0** — free to use, modify, and distribute with attribution. See `LICENSE` for full terms.
