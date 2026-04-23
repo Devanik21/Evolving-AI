@@ -1,4 +1,3 @@
-
 # RIENFoRZe — III
 ### Project A.L.I.V.E. NEXUS · 64-Dimensional Sensory Architecture · April 2026
 
@@ -489,6 +488,40 @@ The `MazE.py` companion app provides the following real-time scientific instrume
 | `q_clip` | ±1,000,000 | Same |
 | `weight_clip` | ±100.0 | Same |
 | `total_parameters` | 58,117 | Neural network only |
+
+---
+
+## Learning Rate Adaptation and Stability
+
+RIENFoRZe-III retains the LR plateau scheduler from v-II with identical parameters. The interaction with the 25-step Dyna-Q planning loop is more pronounced: at 25 planning steps per real step, the effective gradient magnitude applied to each weight per unit wall-clock time is approximately 26× that of a pure online agent. This can accelerate convergence but also increases the risk of oscillation near optima.
+
+The combined effect of Huber loss, weight clamping, and LR reduction provides three layers of stability protection operating on different timescales:
+
+- **Huber loss**: Instant — caps gradient magnitude per update
+- **Gradient clipping**: Instant — caps the total gradient norm
+- **Weight clamping**: Instant — caps total parameter magnitude
+- **LR reduction**: Slow — reduces step size after sustained plateau
+
+---
+
+## N-Step Return Interaction with 25-Step Planning
+
+The N-step buffer (n = 3, inherited from v-I) produces 3-step returns as real transitions to the PER buffer. The 25-step Dyna-Q planning operates on top of these transitions. The combination provides two distinct temporal credit assignment mechanisms:
+
+- **N-step (n=3)**: Real experience, 3-step lookahead, stored in PER
+- **Dyna-Q (K=25)**: Simulated experience, 1-step Bellman, from world model
+
+Together, effective credit assignment spans from 1-step (Dyna-Q simulated) through 3-step (real N-step) temporal horizons. Neither mechanism alone achieves what the combination does: N-step provides richer real transitions while Dyna-Q amplifies their effective count by 25×.
+
+### Throughput Calculation
+
+For an episode of T steps with K = 25 planning steps:
+
+```math
+\text{total Q-updates} = T \cdot (1 + K) = T \cdot 26
+```
+
+For T = 200 (medium Level-5 maze): 5,200 Q-updates from one 200-step real episode. With breakthrough (K = 125 on final step): T · 26 + 124 = 5,324 updates.
 
 ---
 
