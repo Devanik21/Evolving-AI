@@ -1,4 +1,3 @@
-
 # RIENFoRZe — I
 ### Project A.L.I.V.E. NEXUS · Foundational Architecture · April 2026
 
